@@ -1,0 +1,33 @@
+version: '3.8'
+
+services:
+  server:
+    build:
+      context: ./server
+      dockerfile: Dockerfile
+    ports:
+      - "3050:3050"
+    networks:
+      - app-network
+    environment:
+      - NODE_ENV=production
+      - PORT=3050
+    restart: always
+
+  client:
+    build:
+      context: ./client
+      dockerfile: Dockerfile
+    ports:
+      - "3000:3000"
+    networks:
+      - app-network
+    environment:
+      - NODE_ENV=production
+      - WEBSOCKET_PORT=3050
+      - PORT=3000
+    restart: always
+
+networks:
+  app-network:
+    driver: bridge
