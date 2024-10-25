@@ -484,13 +484,14 @@ function App() {
   const [gameState, sendMachineCommand] = useMachine(quizMachine);
   const wsRef = useRef<WebSocket | null>(null);
   const lobby = new URLSearchParams(window.location.search).get('lobby');
+  const port = process.env.WEBSOCKET_PORT ?? 3050
 
   console.log('gameStateValue', gameState.value);
 
   useEffect(() => {
     console.log('useEffectahoy');
     if (gameState.matches('lobby') && !wsRef.current) {
-      const ws = new WebSocket('ws://localhost:3000');
+      const ws = new WebSocket(`ws://localhost:${port}`);
       wsRef.current = ws;
 
       ws.onopen = () => {
