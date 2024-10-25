@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Quiz Game</title>
+    <style>
+      #quiz-container {
+        display: none; /* Initially hidden */
+      }
+      #end-message {
+        display: none; /* Initially hidden */
+        color: red;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Quiz Game</h1>
+    <div id="admin-controls" style="display: none">
+      <button id="start-game">Start Game</button>
+    </div>
+    <div id="quiz-container">
+      <div id="question"></div>
+      <div id="answers"></div>
+      <div id="score">Score: 0</div>
+    </div>
+    <div id="clients-container">
+      <h2>Connected Clients</h2>
+      <ul id="clients-list"></ul>
+    </div>
+    <div id="end-message"></div>
+
+    <script src="https://unpkg.com/xstate@5.18.2/dist/xstate.umd.min.js"></script>
+
+    <script>
+      const { createMachine, createActor, assign } = window.XState || {};
+
+      if (!createActor) {
+        console.error('no createActor found in XState', window.XState);
+      }
+
+      if (!createMachine) {
+        console.error('no createMachine found in XState');
+      }
+
+      if (!assign) {
+        console.error('no assign found in XState');
+      }
+
+      const toggleMachine = createMachine({
+        id: 'quiz',
+        initial: 'inactive',
+        context: {
+          score: 0,
+        },
+        states: {
+          inactive: {
+            on: {
+              TOGGLE: {
+                target: 'active',
+              },
+            },
+          },
+          active: {
+            on: {
+              TOGGLE: {
+                target: 'inactive',
+              },
+              ANSWER: {
+                actions: assign({
+                  score: (context, event) => {
+                    console.log('Received event:', event); // Debugging line
+                    console.log('Current context:', context.event); // Debugging line
+                    return context.score > 0
+                      ? context.score + (context.event.correct ? 1 : 0)
+                      : context.event.correct
+                      ? 1
+                      : 0; // Accessing the correct property from context.event
+                  },
+                }),
+              },
+            },
+          },
+          end: {
+            on: {
+              TOGGLE: {
+                target: 'inactive',
+              },
+            },
+          },
+        },
+      });
+
+      const toggleActor = createActor(toggleMachine);
+      toggleActor.subscribe((state) => {
+        console.log(state.value, state.context);
+        updateUI(state);
+      });
+
+      const ws = new WebSocket('ws://localhost:3000');
+      let userId;
+      let isAdmin = false;
+
+      ws.onopen = () => {
+        console.log('Connected to the server');
+        toggleActor.start();
+      };
+
+      ws.onmessage = (event) => {
+        const data = JSON.parse(event.data);
+
+        console.log('data', JSON.stringify(data, null, 2));
+
+        if (data.type === 'welcome') {
+          console.log('welcome', data);
+          toggleActor.send({ type: 'TOGGLE' });
+          userId = data.userId;
+          isAdmin = data.isAdmin;
+          if (isAdmin) {
+            document.getElementById('admin-controls').style.display = 'block';
+          }
+        } else if (data.type === 'admin') {
+          console.log('admin', data);
+          isAdmin = true;
+          document.getElementById('admin-controls').style.display = 'block';
+        } else if (data.type === 'question') {
+          console.log(data);
+          // Update question in the UI
+          document.getElementById('question').textContent = data.question;
+          const answers = document.getElementById('answers');
+          answers.innerHTML = '';
+          data.answers.forEach((answer, index) => {
+            const button = document.createElement('button');
+            button.textContent = answer;
+            button.onclick = () => {
+              // Send answer to the server
+              ws.send(
+                JSON.stringify({ userId, action: 'answer', answer: index })
+              );
+              // Send the result of the answer to the state machine
+              toggleActor.send({
+                type: 'ANSWER',
+                correct: data.correct === index,
+              });
+            };
+            answers.appendChild(button);
+          });
+        } else if (data.type === 'incorrect') {
+          alert('Incorrect answer. Try again!');
+        } else if (data.type === 'end') {
+          // Update end message and switch state
+          document.getElementById('end-message').textContent = data.message;
+          document.getElementById('end-message').style.display = 'block';
+          toggleActor.send({ type: 'TOGGLE' });
+        } else if (data.type === 'clients') {
+          const clientsList = document.getElementById('clients-list');
+          clientsList.innerHTML = '';
+          data.clients.forEach((client) => {
+            const listItem = document.createElement('li');
+            listItem.textContent = `ID: ${client.id}, Score: ${client.score}, ${
+              client.isAdmin ? ' (Admin)' : ''
+            }`;
+            clientsList.appendChild(listItem);
+          });
+        }
+      };
+
+      ws.onclose = () => {
+        console.log('Disconnected from the server');
+      };
+
+      document.getElementById('start-game').onclick = () => {
+        document.getElementById('quiz-container').style.display = 'block';
+        document.getElementById('end-message').textContent = '';
+        ws.send(JSON.stringify({ userId, action: 'start' }));
+      };
+
+      function updateUI(state) {
+        // Update UI based on the current state
+        const quizContainer = document.getElementById('quiz-container');
+        const scoreDisplay = document.getElementById('score');
+
+        if (state.matches('active')) {
+          quizContainer.style.display = 'block';
+          scoreDisplay.textContent = `Score: ${state.context.score}`;
+        } else {
+          quizContainer.style.display = 'none';
+        }
+      }
+    </script>
+  </body>
+</html>
