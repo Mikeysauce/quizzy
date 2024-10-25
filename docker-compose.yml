@@ -6,7 +6,7 @@ services:
       context: ./server
       dockerfile: Dockerfile
     ports:
-      - "3050:3050"
+      - '3050:3050'
     networks:
       - app-network
     environment:
@@ -19,13 +19,14 @@ services:
       context: ./client
       dockerfile: Dockerfile
     ports:
-      - "3000:3000"
+      - '3000:3000'
     networks:
       - app-network
     environment:
       - NODE_ENV=production
       - WEBSOCKET_PORT=3050
       - PORT=3000
+      - WEBSOCKET_HOST=172.236.31.220
     restart: always
 
 networks:
