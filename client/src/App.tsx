@@ -485,14 +485,14 @@ function App() {
   const wsRef = useRef<WebSocket | null>(null);
   const lobby = new URLSearchParams(window.location.search).get('lobby');
   const port = process.env.WEBSOCKET_PORT ?? 3050;
-  const websocketHost = '172.236.31.220';
+  const websocketHost = 'wss.michaelshelton.co.uk';
 
   console.log('gameStateValue', gameState.value);
 
   useEffect(() => {
     console.log('useEffectahoy');
     if (gameState.matches('lobby') && !wsRef.current) {
-      const ws = new WebSocket(`wss://${websocketHost}:${port}`);
+      const ws = new WebSocket(`wss://${websocketHost}`);
       wsRef.current = ws;
 
       ws.onopen = () => {
