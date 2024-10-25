@@ -485,7 +485,7 @@ function App() {
   const wsRef = useRef<WebSocket | null>(null);
   const lobby = new URLSearchParams(window.location.search).get('lobby');
   const port = process.env.WEBSOCKET_PORT ?? 3050;
-  const websocketHost = process.env.WEBSOCKET_HOST ?? 'localhost';
+  const websocketHost = '172.236.31.220';
 
   console.log('gameStateValue', gameState.value);
 
