@@ -492,7 +492,7 @@ function App() {
   useEffect(() => {
     console.log('useEffectahoy');
     if (gameState.matches('lobby') && !wsRef.current) {
-      const ws = new WebSocket(`ws://${websocketHost}:${port}`);
+      const ws = new WebSocket(`wss://${websocketHost}:${port}`);
       wsRef.current = ws;
 
       ws.onopen = () => {
