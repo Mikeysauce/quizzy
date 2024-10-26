@@ -9,16 +9,16 @@ export const useQuizMachine = () => {
   const lobby = new URLSearchParams(window.location.search).get('lobby');
   const websocketHost = import.meta.env.VITE_WEBSOCKET_HOST ?? 'localhost:3000';
   const websocketProtocol = websocketHost.includes('localhost') ? 'ws' : 'wss';
-  console.log('nodeenv', import.meta.env.VITE_NODE_ENV);
+  'nodeenv', import.meta.env.VITE_NODE_ENV);
 
   useEffect(() => {
     if (gameState.matches('lobby') && !wsRef.current) {
-      console.log('connecting to websocket');
+      'connecting to websocket');
       const ws = new WebSocket(`${websocketProtocol}://${websocketHost}`);
       wsRef.current = ws;
 
       ws.onopen = () => {
-        console.log('connected to websocket');
+        'connected to websocket');
         ws.send(
           JSON.stringify({
             type: 'setName',
@@ -30,7 +30,7 @@ export const useQuizMachine = () => {
 
       ws.onmessage = (event) => {
         const data = JSON.parse(event.data);
-        console.log('data', data);
+        'data', data);
 
         if (data.type === 'gameOver') {
           sendMachineCommand({
@@ -60,7 +60,7 @@ export const useQuizMachine = () => {
         }
 
         if (data.type === 'welcome') {
-          console.log('welcome', data);
+          'welcome', data);
           sendMachineCommand({
             type: 'UPDATE_USER',
             user: {
@@ -78,14 +78,14 @@ export const useQuizMachine = () => {
 
     // return () => {
     //   if (wsRef.current) {
-    //     console.log('closing websocket');
+    //     'closing websocket');
     //     wsRef.current.close();
     //   }
     // };
   }, [gameState, sendMachineCommand, websocketHost, lobby]);
 
   const sendQuestionsToServer = (questions: any[]) => {
-    console.log('sendQuestionsToServer', questions);
+    'sendQuestionsToServer', questions);
     wsRef.current?.send(
       JSON.stringify({ type: 'questions', questions, lobby })
     );
@@ -103,7 +103,7 @@ export const useQuizMachine = () => {
     );
   };
 
-  console.log(gameState.value);
+  gameState.value);
 
   return {
     gameState,
