@@ -24,9 +24,7 @@ services:
       - app-network
     environment:
       - NODE_ENV=production
-      - WEBSOCKET_PORT=3050
       - PORT=3000
-      - WEBSOCKET_HOST=172.236.31.220
     restart: always
 
 networks:

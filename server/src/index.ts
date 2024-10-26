@@ -45,7 +45,7 @@ const getQuestionsFromMemory = (lobby: string): Question[] => {
   return questionMap.get(lobby)!;
 };
 
-app.use(express.static('public'));
+// app.use(express.static('public'));
 
 const createUser = (name: string, lobby: string) => ({
   name,
@@ -114,7 +114,7 @@ const broadcastAnswerResults = (lobby: string, questionId: string) => {
     return {
       id: user.id,
       name: user.name,
-      score: answer === question.correct ? 1 : 0,
+      score: answer === question.correct.answer ? 1 : 0,
     };
   });
 

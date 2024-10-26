@@ -4,11 +4,14 @@ import { Theme } from '@radix-ui/themes';
 
 import App from './App.tsx';
 import './index.css';
+import ErrorBoundary from './components/EB.tsx';
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <Theme>
-      <App />
+      <ErrorBoundary>
+        <App />
+      </ErrorBoundary>
     </Theme>
   </StrictMode>
 );
