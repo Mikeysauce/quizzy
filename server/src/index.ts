@@ -69,7 +69,7 @@ const transitionToNextQuestionOrEndGameIfNoQuestionsRemaining = (
 ) => {
   const questions = getQuestionsFromMemory(lobby);
 
-  'questions', questions);
+  console.log('questions', questions);
 
   const currQuestionIdx = questions.findIndex((q) => q.isActive);
 
@@ -165,7 +165,7 @@ wss.on('connection', (ws: WebSocket) => {
   // const isAdmin = Object.keys(users).length === 0;
   // users[userId] = { id: userId, ws, isAdmin, score: 0 };
 
-  `New client connected`);
+  console.log(`New client connected`);
 
   // ws.send(JSON.stringify({ type: 'welcome', userId, isAdmin }));
   // broadcastClients();
@@ -174,7 +174,7 @@ wss.on('connection', (ws: WebSocket) => {
     const data = JSON.parse(message);
     if (!data) return;
 
-    'data', data);
+    console.log('data', data);
 
     if (data.type === 'setName') {
       const user = createUser(data.name, data.lobby);
@@ -201,7 +201,7 @@ wss.on('connection', (ws: WebSocket) => {
   });
 
   ws.on('close', (x) => {
-    `Client disconnected: ${userId}`);
+    console.log(`Client disconnected: ${userId}`);
     delete users[userId];
 
     gameStarted = false;
@@ -237,7 +237,7 @@ function broadcastClients(): void {
     answers: user.answers,
   }));
 
-  'clientList', clientList);
+  console.log('clientList', clientList);
   wss.clients.forEach((client) => {
     if (client.readyState === WebSocket.OPEN) {
       client.send(JSON.stringify({ type: 'clients', clients: clientList }));
@@ -254,5 +254,5 @@ function ensureAdminExists(): void {
 }
 
 server.listen(port, () => {
-  `Server is listening on port ${port}`);
+  console.log(`Server is listening on port ${port}`);
 });
