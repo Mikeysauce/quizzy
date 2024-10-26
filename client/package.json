@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "serve": "serve -s dist -l $PORT",
-    "dev": "cross-env NODE_ENV=development VITE_WEBSOCKET_HOST=loller vite",
+    "dev": "cross-env NODE_ENV=development VITE_WEBSOCKET_HOST=localhost:3000 vite",
     "build": "vite build",
     "lint": "eslint .",
     "preview": "vite preview"

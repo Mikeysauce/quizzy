@@ -17,8 +17,6 @@ function App() {
 
   const shouldCenter = gameState.matches('identify');
 
-  gameState.value);
-
   return (
     <div className={shouldCenter ? 'container' : ''}>
       {gameState.matches('identify') && (

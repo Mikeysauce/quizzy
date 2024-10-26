@@ -9,16 +9,16 @@ export const useQuizMachine = () => {
   const lobby = new URLSearchParams(window.location.search).get('lobby');
   const websocketHost = import.meta.env.VITE_WEBSOCKET_HOST ?? 'localhost:3000';
   const websocketProtocol = websocketHost.includes('localhost') ? 'ws' : 'wss';
-  'nodeenv', import.meta.env.VITE_NODE_ENV);
 
   useEffect(() => {
     if (gameState.matches('lobby') && !wsRef.current) {
-      'connecting to websocket');
       const ws = new WebSocket(`${websocketProtocol}://${websocketHost}`);
+
+      console.log(`${websocketProtocol}://${websocketHost}`);
+
       wsRef.current = ws;
 
       ws.onopen = () => {
-        'connected to websocket');
         ws.send(
           JSON.stringify({
             type: 'setName',
@@ -30,7 +30,6 @@ export const useQuizMachine = () => {
 
       ws.onmessage = (event) => {
         const data = JSON.parse(event.data);
-        'data', data);
 
         if (data.type === 'gameOver') {
           sendMachineCommand({
@@ -60,7 +59,6 @@ export const useQuizMachine = () => {
         }
 
         if (data.type === 'welcome') {
-          'welcome', data);
           sendMachineCommand({
             type: 'UPDATE_USER',
             user: {
@@ -78,14 +76,12 @@ export const useQuizMachine = () => {
 
     // return () => {
     //   if (wsRef.current) {
-    //     'closing websocket');
     //     wsRef.current.close();
     //   }
     // };
   }, [gameState, sendMachineCommand, websocketHost, lobby]);
 
   const sendQuestionsToServer = (questions: any[]) => {
-    'sendQuestionsToServer', questions);
     wsRef.current?.send(
       JSON.stringify({ type: 'questions', questions, lobby })
     );
@@ -102,8 +98,6 @@ export const useQuizMachine = () => {
       })
     );
   };
-
-  gameState.value);
 
   return {
     gameState,
