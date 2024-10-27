@@ -18,13 +18,13 @@ services:
     build:
       context: ./client
       dockerfile: Dockerfile
+      args:
+        BASIC_AUTH_USERNAME: ${BASIC_AUTH_USERNAME}
+        BASIC_AUTH_PASSWORD: ${BASIC_AUTH_PASSWORD}
     ports:
       - '3000:3000'
     networks:
       - app-network
-    args:
-      BASIC_AUTH_USERNAME: ${BASIC_AUTH_USERNAME}
-      BASIC_AUTH_PASSWORD: ${BASIC_AUTH_PASSWORD}
     environment:
       - BASIC_AUTH_USERNAME=${BASIC_AUTH_USERNAME}
       - BASIC_AUTH_PASSWORD=${BASIC_AUTH_PASSWORD}
