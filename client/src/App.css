@@ -6,6 +6,30 @@ button {
   all: unset;
 }
 
+.containzer {
+  position: relative;
+  padding-left: 50px;
+  &:before {
+    content: '👋';
+    position: absolute;
+    top: 0;
+    left: -6px;
+    width: 100%;
+    height: 100%;
+    z-index: -1;
+    font-size: 40px;
+  }
+}
+
+.questions {
+  display: grid;
+  grid-auto-columns: 1fr;
+  grid-auto-rows: auto;
+  gap: 30px;
+  align-items: start;
+  justify-items: start;
+}
+
 .RadioGroupRoot {
   display: flex;
   flex-direction: column;
@@ -84,8 +108,6 @@ input[type='radio']:checked + label {
   > *:hover {
     cursor: pointer;
   }
-
-  margin-bottom: 10px;
 }
 
 .question-title-ghost-button {
@@ -135,7 +157,7 @@ input {
 
 .game-controls {
   display: flex;
-  gap: 5px;
+  gap: 15px;
   cursor: pointer;
   *:hover {
     cursor: pointer;

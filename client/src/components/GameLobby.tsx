@@ -1,4 +1,12 @@
-import { Button, Flex, Spinner } from '@radix-ui/themes';
+import {
+  Box,
+  Button,
+  Callout,
+  Container,
+  Flex,
+  Spinner,
+} from '@radix-ui/themes';
+import { InfoCircledIcon } from '@radix-ui/react-icons';
 import QuestionForm from './QuestionForm';
 import { useState } from 'react';
 
@@ -9,8 +17,17 @@ interface GameLobbyProps {
 }
 
 function GameLobby({ clients, user, sendQuestionsToServer }: GameLobbyProps) {
+  const questionsUrlParam = new URLSearchParams(window.location.search).get(
+    'questions'
+  );
+  const questionsFromUrl = questionsUrlParam
+    ? JSON.parse(decodeURIComponent(questionsUrlParam))
+    : [];
+
   const [questions, setQuestions] = useState(
-    localStorage.getItem('questions')
+    questionsFromUrl.length > 0
+      ? questionsFromUrl
+      : localStorage.getItem('questions')
       ? JSON.parse(localStorage.getItem('questions')!)
       : []
   );
@@ -111,32 +128,44 @@ function GameLobby({ clients, user, sendQuestionsToServer }: GameLobbyProps) {
         }}
       >
         <div>
-          <div className="heading">
-            <h2>
-              Hello <span>{user.name}</span>, you are <span>hosting</span> lobby{' '}
-              <span>{lobby}</span>{' '}
-              {clients.length > 1 && (
-                <>
-                  with <span>{clients.length - 1}</span> other player(s).
-                </>
-              )}
-            </h2>
-          </div>
+          <Box>
+            <div className="heading">
+              <h2>
+                Hello <span>{user.name}</span>, you are <span>hosting</span>{' '}
+                lobby <span>{lobby}</span>{' '}
+                {clients.length > 1 && (
+                  <>
+                    with <span>{clients.length - 1}</span> other player(s).
+                  </>
+                )}
+              </h2>
+            </div>
+          </Box>
           <div className="questions">
+            {questions.length > 0 && (
+              <>
+                <Callout.Root color="gray" variant="outline">
+                  <Callout.Icon>
+                    <InfoCircledIcon />
+                  </Callout.Icon>
+                  <Callout.Text>
+                    You currently have{' '}
+                    <span style={{ fontWeight: 'bold' }}>
+                      {questions.length}
+                    </span>{' '}
+                    question(s). When you have finished adding questions, press
+                    the 'continue' button below to proceed.
+                  </Callout.Text>
+                  <Callout.Text>
+                    Click on a question to edit it. You will need admin
+                    privileges to install and access this application.
+                  </Callout.Text>
+                </Callout.Root>
+              </>
+            )}
             <Button onClick={() => setIsSetup(!isSetup)}>
               {isSetup ? 'Hide' : 'Show'} new question form
             </Button>
-            {questions.length > 0 && (
-              <>
-                <p>
-                  You currently have{' '}
-                  <span style={{ fontWeight: 'bold' }}>{questions.length}</span>{' '}
-                  question(s). When you have finished adding questions, press
-                  the 'continue' button below to proceed.
-                </p>
-                <p>Click on a question to edit it.</p>
-              </>
-            )}
             <div className="questions-list-container">
               {questions.map((question, index) => (
                 <div key={question.createdAt}>
@@ -168,7 +197,7 @@ function GameLobby({ clients, user, sendQuestionsToServer }: GameLobbyProps) {
                   }}
                 >
                   <Button onClick={saveQuestions}>
-                    Save questions for later (localStorage)
+                    Save questions for later
                   </Button>
                   <Button
                     color="green"

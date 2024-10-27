@@ -135,7 +135,7 @@ const broadcastAnswerResults = (lobby: string, questionId: string) => {
 
       setTimeout(
         () => transitionToNextQuestionOrEndGameIfNoQuestionsRemaining(lobby),
-        3000
+        10000
       );
     }
   });

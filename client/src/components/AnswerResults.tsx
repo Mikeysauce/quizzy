@@ -1,3 +1,5 @@
+import { Progress } from '@radix-ui/themes';
+
 export interface AnswerResultsProps {
   users: { id: string; name?: string; score: number }[];
   questions: {
@@ -17,18 +19,23 @@ export const AnswerResults: React.FC<AnswerResultsProps> = (props) => {
   }
 
   return (
-    <div>
-      <h2>Answer Results</h2>
-      <p>Question: {currentQuestion.question}</p>
-      <p>Correct Answer: {currentQuestion.correct.answer}</p>
-      <ul>
-        {currentQuestion.users.map((user) => (
-          <li key={user.id}>
-            {user.name || 'Anonymous'} -{' '}
-            {user.score > 0 ? 'Correct' : 'Incorrect'}
-          </li>
-        ))}
-      </ul>
-    </div>
+    <>
+      <div>
+        <Progress duration="10s" />
+      </div>
+      <div>
+        <h2>Answer Results</h2>
+        <p>Question: {currentQuestion.question}</p>
+        <p>Correct Answer: {currentQuestion.correct.answer}</p>
+        <ul>
+          {currentQuestion.users.map((user) => (
+            <li key={user.id}>
+              {user.name || 'Anonymous'} -{' '}
+              {user.score > 0 ? 'Correct' : 'Incorrect'}
+            </li>
+          ))}
+        </ul>
+      </div>
+    </>
   );
 };

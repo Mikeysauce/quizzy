@@ -16,10 +16,16 @@ function App() {
   } = useQuizMachine();
 
   const shouldCenter = gameState.matches('identify');
+  const queryparams = new URLSearchParams(window.location.search);
+  const name = queryparams.get('name');
+
+  if (name) {
+    sendMachineCommand({ type: 'SUBMIT_NAME', name });
+  }
 
   return (
     <div className={shouldCenter ? 'container' : ''}>
-      {gameState.matches('identify') && (
+      {gameState.matches('identify') && !name && (
         <Identify
           onSubmit={(name) => sendMachineCommand({ type: 'SUBMIT_NAME', name })}
         />

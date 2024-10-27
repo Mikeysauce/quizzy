@@ -1,5 +1,5 @@
 import * as Form from '@radix-ui/react-form';
-import { Button } from '@radix-ui/themes';
+import { Button, Heading } from '@radix-ui/themes';
 import { useState } from 'react';
 
 interface IdentifyProps {
@@ -11,7 +11,7 @@ function Identify({ onSubmit }: IdentifyProps) {
 
   return (
     <div className="containzer">
-      <h1>👋Quiz App</h1>
+      <Heading size="9">Quiz App</Heading>
       <Form.Root className="FormRoot">
         <Form.Field className="FormField" name="name">
           <div
