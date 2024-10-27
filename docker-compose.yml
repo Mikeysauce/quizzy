@@ -22,11 +22,14 @@ services:
       - '3000:3000'
     networks:
       - app-network
+    args:
+      BASIC_AUTH_USERNAME: ${BASIC_AUTH_USERNAME}
+      BASIC_AUTH_PASSWORD: ${BASIC_AUTH_PASSWORD}
     environment:
+      - BASIC_AUTH_USERNAME=${BASIC_AUTH_USERNAME}
+      - BASIC_AUTH_PASSWORD=${BASIC_AUTH_PASSWORD}
       - NODE_ENV=production
       - PORT=3000
-      - BASIC_AUTH_USERNAME
-      - BASIC_AUTH_PASSWORD
     restart: always
 
 networks:
