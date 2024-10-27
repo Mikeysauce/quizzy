@@ -21,7 +21,7 @@ COPY . .
 RUN npm run build
 
 # Install a lightweight HTTP server for serving the static files
-RUN npm install -g serve
+RUN npm install -g http-server@14.1.1
 
 # Expose the client port (adjust if different)
 EXPOSE $PORT

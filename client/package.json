@@ -4,7 +4,7 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "serve": "serve -s dist -l $PORT",
+    "serve": "http-server dist --username $BASIC_AUTH_USERNAME --password $BASIC_AUTH_PASSWORD --port $PORT",
     "dev": "cross-env NODE_ENV=development VITE_WEBSOCKET_HOST=localhost:3000 vite",
     "build": "vite build",
     "lint": "eslint .",
