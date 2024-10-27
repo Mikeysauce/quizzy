@@ -25,6 +25,8 @@ services:
     environment:
       - NODE_ENV=production
       - PORT=3000
+      - BASIC_AUTH_USERNAME
+      - BASIC_AUTH_PASSWORD
     restart: always
 
 networks:
