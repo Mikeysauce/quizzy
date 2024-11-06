@@ -1,6 +1,6 @@
 import { Progress } from '@radix-ui/themes';
 import * as RadioGroup from '@radix-ui/react-radio-group';
-import styles from './Game.module.scss';
+import styles from './game.module.scss';
 import * as Label from '@radix-ui/react-label';
 
 export interface AnswerResultsProps {

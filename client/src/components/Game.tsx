@@ -6,7 +6,7 @@ import {
   ReactNode,
   useState,
 } from 'react';
-import styles from './Game.module.scss';
+import styles from './game.module.scss';
 import * as Label from '@radix-ui/react-label';
 
 interface Question {
