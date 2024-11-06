@@ -60,9 +60,13 @@ function GameLobby({ clients, user, sendQuestionsToServer }: GameLobbyProps) {
       // Append the file to the FormData object
       internalFormData.append('file', file);
 
+      const pathPrefix = window.location.origin.includes('localhost')
+        ? 'http://localhost:3000'
+        : window.location.origin.replace('quiz', 'wss');
+
       // Directly sending the file to the server without FormData
       return axios
-        .post('http://localhost:3000/upload', internalFormData, {
+        .post(`${pathPrefix}/upload`, internalFormData, {
           headers: {
             'Content-Type': 'multipart/form-data',
             Authorization: 'Basic ' + btoa('bob:bob'), // Replace with your credentials
