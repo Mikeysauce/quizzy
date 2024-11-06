@@ -85,10 +85,10 @@ function GameLobby({ clients, user, sendQuestionsToServer }: GameLobbyProps) {
     let { path: imagePath } = await handleFileUpload();
 
     const pathPrefix = window.location.origin.includes('localhost')
-      ? 'http://localhost:3000/'
+      ? 'http://localhost:3000'
       : window.location.origin.replace('quiz', 'wss');
 
-    imagePath = `${pathPrefix}${imagePath.replaceAll('\\', '/')}`;
+    imagePath = `${pathPrefix}/${imagePath.replaceAll('\\', '/')}`;
 
     const question = form[0].value;
     // const image = images.find((img) => img.questionId === question)?.image;
