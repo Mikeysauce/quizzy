@@ -1,9 +1,64 @@
 import express, { Application } from 'express';
+import multer from 'multer';
 import { createServer } from 'http';
 import { Server as WebSocketServer, WebSocket } from 'ws';
 import { v4 as uuidv4 } from 'uuid';
+import fs from 'node:fs';
+import path from 'node:path';
+import basicAuth from 'express-basic-auth';
+import cors from 'cors';
 
 const app: Application = express();
+
+app.use(cors());
+
+interface CustomRequest extends Request {
+  file: Express.Multer.File; // Use the correct type for multer
+}
+
+const { BASIC_AUTH_USERNAME, BASIC_AUTH_PASSWORD } = process.env;
+
+if (BASIC_AUTH_USERNAME && BASIC_AUTH_PASSWORD) {
+  app.use(
+    basicAuth({
+      users: { [BASIC_AUTH_USERNAME]: BASIC_AUTH_PASSWORD },
+      challenge: true,
+    })
+  );
+}
+
+const storage = multer.diskStorage({
+  destination: (req, file, cb) => {
+    const dir = './uploads';
+    if (!fs.existsSync(dir)) {
+      fs.mkdirSync(dir);
+    }
+    cb(null, dir);
+  },
+  filename: (req, file, cb) => {
+    cb(null, `${Date.now()}-${file.originalname}`);
+  },
+});
+
+const upload = multer({ storage });
+
+app.post('/upload', upload.single('file'), (req, res) => {
+  const file = req.file;
+
+  if (file) {
+    res.send({
+      message: 'File uploaded successfully',
+      path: file.path.replaceAll('\\', '/'),
+    });
+  }
+
+  console.log(file);
+});
+
+console.log('paff', path.join(__dirname, 'uploads'));
+
+app.use('/uploads', express.static(path.join(__dirname, '../', 'uploads')));
+
 const server = createServer(app);
 const wss = new WebSocketServer({ server });
 const port = process.env.PORT ?? 3000;
@@ -135,7 +190,7 @@ const broadcastAnswerResults = (lobby: string, questionId: string) => {
 
       setTimeout(
         () => transitionToNextQuestionOrEndGameIfNoQuestionsRemaining(lobby),
-        10000
+        30000
       );
     }
   });

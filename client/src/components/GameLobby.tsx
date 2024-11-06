@@ -9,11 +9,17 @@ import {
 import { InfoCircledIcon } from '@radix-ui/react-icons';
 import QuestionForm from './QuestionForm';
 import { useState } from 'react';
+import axios from 'axios';
 
 interface GameLobbyProps {
   clients: { name: string; isAdmin: boolean }[];
   user: { name: string; isAdmin: boolean };
   sendQuestionsToServer: (questions: any) => void;
+}
+
+interface ImageStore {
+  questionId: string;
+  image: string;
 }
 
 function GameLobby({ clients, user, sendQuestionsToServer }: GameLobbyProps) {
@@ -23,6 +29,7 @@ function GameLobby({ clients, user, sendQuestionsToServer }: GameLobbyProps) {
   const questionsFromUrl = questionsUrlParam
     ? JSON.parse(decodeURIComponent(questionsUrlParam))
     : [];
+  const [images, setImages] = useState<ImageStore[]>([]);
 
   const [questions, setQuestions] = useState(
     questionsFromUrl.length > 0
@@ -41,10 +48,46 @@ function GameLobby({ clients, user, sendQuestionsToServer }: GameLobbyProps) {
 
   const adminName = clients.find((client) => client.isAdmin)?.name;
 
-  const handleSubmit = (e: React.SyntheticEvent<HTMLFormElement>) => {
+  const handleSubmit = async (e: React.SyntheticEvent<HTMLFormElement>) => {
     e.preventDefault();
     const form = e.target;
+    const formData = new FormData(form);
+
+    async function handleFileUpload() {
+      const internalFormData = new FormData();
+      const file = formData.get('hiddenFileInput') as File;
+
+      // Append the file to the FormData object
+      internalFormData.append('file', file);
+
+      // Directly sending the file to the server without FormData
+      return axios
+        .post('http://localhost:3000/upload', internalFormData, {
+          headers: {
+            'Content-Type': 'multipart/form-data',
+            Authorization: 'Basic ' + btoa('bob:bob'), // Replace with your credentials
+          },
+          maxBodyLength: Infinity, // If you're uploading large files, increase the limit
+        })
+        .then((response) => {
+          console.log('File uploaded successfully:', response.data);
+          return response.data;
+        })
+        .catch((error) => {
+          console.error('Error uploading file:', error);
+        });
+    }
+
+    let { path: imagePath } = await handleFileUpload();
+
+    const pathPrefix = window.location.origin.includes('localhost')
+      ? 'http://localhost:3000/'
+      : window.location.origin.replace('quiz', 'wss');
+
+    imagePath = `${pathPrefix}${imagePath.replaceAll('\\', '/')}`;
+
     const question = form[0].value;
+    // const image = images.find((img) => img.questionId === question)?.image;
     const answers = Array.from(form)
       .slice(1, 5)
       .map((input, idx) => ({
@@ -62,6 +105,7 @@ function GameLobby({ clients, user, sendQuestionsToServer }: GameLobbyProps) {
         correct,
         createdAt: new Date().toISOString(),
         isEditing: false,
+        ...(imagePath && { imagePath }),
       },
     ]);
 
@@ -222,7 +266,11 @@ function GameLobby({ clients, user, sendQuestionsToServer }: GameLobbyProps) {
 
         {isSetup && (
           <>
-            <QuestionForm handleSubmit={handleSubmit} />
+            <QuestionForm
+              handleSubmit={(e) => handleSubmit(e)}
+              // setImage={setImage}
+              handleDelete={() => {}}
+            />
           </>
         )}
       </div>

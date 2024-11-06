@@ -104,6 +104,10 @@ input[type='radio']:checked + label {
 }
 
 .questions-list-container {
+  display: grid;
+  grid-auto-columns: 1fr;
+  gap: 15px;
+
   max-width: 768px;
   > *:hover {
     cursor: pointer;

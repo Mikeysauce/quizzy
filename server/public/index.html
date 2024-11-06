@@ -69,8 +69,8 @@
               ANSWER: {
                 actions: assign({
                   score: (context, event) => {
-                    'Received event:', event); // Debugging line
-                    'Current context:', context.event); // Debugging line
+                    console.log('Received event:', event); // Debugging line
+                    console.log('Current context:', context.event); // Debugging line
                     return context.score > 0
                       ? context.score + (context.event.correct ? 1 : 0)
                       : context.event.correct
@@ -93,7 +93,7 @@
 
       const toggleActor = createActor(toggleMachine);
       toggleActor.subscribe((state) => {
-        state.value, state.context);
+        console.log(state.value, state.context);
         updateUI(state);
       });
 
@@ -102,17 +102,17 @@
       let isAdmin = false;
 
       ws.onopen = () => {
-        'Connected to the server');
+        console.log('Connected to the server');
         toggleActor.start();
       };
 
       ws.onmessage = (event) => {
         const data = JSON.parse(event.data);
 
-        'data', JSON.stringify(data, null, 2));
+        console.log('data', JSON.stringify(data, null, 2));
 
         if (data.type === 'welcome') {
-          'welcome', data);
+          console.log('welcome', data);
           toggleActor.send({ type: 'TOGGLE' });
           userId = data.userId;
           isAdmin = data.isAdmin;
@@ -120,11 +120,11 @@
             document.getElementById('admin-controls').style.display = 'block';
           }
         } else if (data.type === 'admin') {
-          'admin', data);
+          console.log('admin', data);
           isAdmin = true;
           document.getElementById('admin-controls').style.display = 'block';
         } else if (data.type === 'question') {
-          data);
+          console.log(data);
           // Update question in the UI
           document.getElementById('question').textContent = data.question;
           const answers = document.getElementById('answers');
@@ -166,7 +166,7 @@
       };
 
       ws.onclose = () => {
-        'Disconnected from the server');
+        console.log('Disconnected from the server');
       };
 
       document.getElementById('start-game').onclick = () => {
