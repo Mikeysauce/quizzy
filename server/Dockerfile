@@ -16,6 +16,8 @@ RUN npm install
 # Copy the rest of the server code
 COPY . .
 
+RUN mkdir -p /app/uploads
+
 # Expose the server port (adjust if different)
 EXPOSE 3000
 
