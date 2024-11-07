@@ -13,7 +13,7 @@ services:
       - NODE_ENV=production
       - PORT=3050
     volumes:
-      - uploads:/app/uploads
+      - ./sserver/uploads:/app/uploads
     restart: always
 
   client:
