@@ -38,8 +38,6 @@ function Game({ questions, sendAnswerToServer, isResults }: GameProps) {
       currentQuestion &&
       initRef.current.question !== currentQuestion.question
     ) {
-      console.log('initRef', initRef.current);
-      console.log('currentQuestion', currentQuestion);
       setHasSubmitted(false);
       setSelectedAnswer('');
       initRef.current = currentQuestion;

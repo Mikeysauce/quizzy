@@ -44,8 +44,6 @@ function GameLobby({ clients, user, sendQuestionsToServer }: GameLobbyProps) {
   const isAdmin = user.isAdmin;
   const isPending = true;
 
-  console.log(user);
-
   const adminName = clients.find((client) => client.isAdmin)?.name;
 
   const handleSubmit = async (e: React.SyntheticEvent<HTMLFormElement>) => {

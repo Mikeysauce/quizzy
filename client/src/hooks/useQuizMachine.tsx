@@ -14,8 +14,6 @@ export const useQuizMachine = () => {
     if (gameState.matches('lobby') && !wsRef.current) {
       const ws = new WebSocket(`${websocketProtocol}://${websocketHost}`);
 
-      console.log(`${websocketProtocol}://${websocketHost}`);
-
       wsRef.current = ws;
 
       ws.onopen = () => {
