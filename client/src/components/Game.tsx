@@ -125,7 +125,7 @@ function Game({ questions, sendAnswerToServer, isResults }: GameProps) {
         )}
         {isResults && (
           <div>
-            <Progress duration="10s" />
+            <Progress duration="13s" />
           </div>
         )}
       </div>
