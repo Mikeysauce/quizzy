@@ -1,11 +1,6 @@
 import * as RadioGroup from '@radix-ui/react-radio-group';
-import { Button } from '@radix-ui/themes';
-import {
-  JSXElementConstructor,
-  ReactElement,
-  ReactNode,
-  useState,
-} from 'react';
+import { Button, Progress } from '@radix-ui/themes';
+import { useEffect, useRef, useState } from 'react';
 import styles from './game.module.scss';
 import * as Label from '@radix-ui/react-label';
 
@@ -14,7 +9,7 @@ interface Question {
   isActive: boolean;
   createdAt: string;
   question: string;
-  answers: string;
+  answers: string[];
   correct: {
     answer: string;
     index: number;
@@ -24,12 +19,32 @@ interface Question {
 interface GameProps {
   questions: Question[];
   sendAnswerToServer: (createdAt: string, answer: string) => void;
+  isResults: boolean;
 }
 
-function Game({ questions, sendAnswerToServer }: GameProps) {
+function Game({ questions, sendAnswerToServer, isResults }: GameProps) {
+  const initRef = useRef<Question | null>(null);
   const [selectedAnswer, setSelectedAnswer] = useState('');
   const [hasSubmitted, setHasSubmitted] = useState(false);
   const currentQuestion = questions.find((question) => question.isActive);
+
+  useEffect(() => {
+    if (!initRef.current && currentQuestion) {
+      initRef.current = currentQuestion;
+    }
+
+    if (
+      initRef.current &&
+      currentQuestion &&
+      initRef.current.question !== currentQuestion.question
+    ) {
+      console.log('initRef', initRef.current);
+      console.log('currentQuestion', currentQuestion);
+      setHasSubmitted(false);
+      setSelectedAnswer('');
+      initRef.current = currentQuestion;
+    }
+  }, [currentQuestion]);
 
   if (!currentQuestion) {
     return <p>uhoh</p>;
@@ -56,13 +71,17 @@ function Game({ questions, sendAnswerToServer }: GameProps) {
       <div className={styles.cardContent}>
         {imagePath && (
           <div className={styles.imageContainer}>
-            <img src={imagePath} alt="Quiz question image" />
+            <img
+              src={imagePath}
+              alt="Quiz question image"
+              className={styles.gamePhoto}
+            />
           </div>
         )}
         <RadioGroup.Root
           onValueChange={setSelectedAnswer}
           className={styles.radioGroup}
-          disabled={false}
+          disabled={hasSubmitted || isResults}
         >
           {answers.map(({ answer, index }) => (
             <div key={index} className={styles.radioItem}>
@@ -76,7 +95,7 @@ function Game({ questions, sendAnswerToServer }: GameProps) {
               <Label.Root
                 htmlFor={`answer-${index}`}
                 className={`${styles.label} ${
-                  hasSubmitted
+                  isResults
                     ? answer === correctAnswer
                       ? styles.correct
                       : answer === selectedAnswer
@@ -90,70 +109,30 @@ function Game({ questions, sendAnswerToServer }: GameProps) {
             </div>
           ))}
         </RadioGroup.Root>
-      </div>
-      <div className={styles.cardFooter}>
-        <button
-          type="submit"
-          disabled={!selectedAnswer || hasSubmitted}
-          className={styles.submitButton}
-        >
-          {hasSubmitted ? 'Submitted' : 'Submit Answer'}
-        </button>
-      </div>
-
-      {hasSubmitted && (
-        <div className={styles.cardWaiting}>
-          <p>Your answer has been submitted, waiting for other players!</p>
+        <div className={styles.cardFooter}>
+          {!isResults && (
+            <button
+              type="submit"
+              disabled={!selectedAnswer || hasSubmitted}
+              className={styles.submitButton}
+            >
+              {hasSubmitted ? 'Submitted' : 'Submit Answer'}
+            </button>
+          )}
         </div>
-      )}
+        {hasSubmitted && !isResults && (
+          <div className={styles.cardWaiting}>
+            <p>Your answer has been submitted, waiting for other players!</p>
+          </div>
+        )}
+        {isResults && (
+          <div>
+            <Progress duration="10s" />
+          </div>
+        )}
+      </div>
     </form>
   );
-
-  // return (
-  //   <div>
-  //     <div>
-  //       <h2>{currentQuestion.question}</h2>
-
-  //       <form onSubmit={handleSubmit}>
-  //         <RadioGroup.Root
-  //           className="RadioGroupRoot"
-  //           defaultValue="default"
-  //           aria-label="View density"
-  //         >
-  //           {currentQuestion.answers.map(({ answer, index }) => {
-  //             return (
-  //               <div style={{ display: 'flex', alignItems: 'center' }}>
-  //                 <RadioGroup.Item
-  //                   className="RadioGroupItem"
-  //                   value={answer}
-  //                   id={`r${index + 1}`}
-  //                 >
-  //                   <RadioGroup.Indicator className="RadioGroupIndicator" />
-  //                 </RadioGroup.Item>
-  //                 <label className="Label" htmlFor={`r${index + 1}`}>
-  //                   {answer}
-  //                 </label>
-  //               </div>
-  //             );
-  //           })}
-  //         </RadioGroup.Root>
-
-  //         <div style={{ margin: '1rem 0' }}>
-  //           <Button type="submit" disabled={hasSubmitted}>
-  //             Submit
-  //           </Button>
-  //           {hasSubmitted && (
-  //             <div>
-  //               <p>
-  //                 Your answer has been submitted, waiting for other players!
-  //               </p>
-  //             </div>
-  //           )}
-  //         </div>
-  //       </form>
-  //     </div>
-  //   </div>
-  // );
 }
 
 export default Game;

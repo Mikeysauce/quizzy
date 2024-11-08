@@ -37,14 +37,12 @@ function App() {
           sendQuestionsToServer={sendQuestionsToServer}
         />
       )}
-      {gameState.matches('game') && (
+      {(gameState.matches('game') || gameState.matches('answerResults')) && (
         <Game
           questions={gameState.context.questions}
           sendAnswerToServer={sendAnswerToServer}
+          isResults={gameState.matches('answerResults')}
         />
-      )}
-      {gameState.matches('answerResults') && (
-        <AnswerResults {...gameState.context} />
       )}
 
       {gameState.matches('gameOver') && <GameResults {...gameState.context} />}
