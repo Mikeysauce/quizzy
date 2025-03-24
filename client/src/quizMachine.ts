@@ -64,6 +64,7 @@ export const quizMachine = createMachine({
         ANSWER_RESULTS: {
           actions: assign({
             questions: ({ context, event }) => {
+              console.log('Processing ANSWER_RESULTS in game state', event);
               const updatedQuestions = context.questions.map((question) => {
                 if (question.createdAt === event.questionId) {
                   return {
@@ -80,6 +81,14 @@ export const quizMachine = createMachine({
           }),
           target: 'answerResults',
         },
+        QUESTIONS: {
+          actions: assign({
+            questions: ({ event }) => {
+              console.log('Processing QUESTIONS in game state', event);
+              return event.questions;
+            },
+          }),
+        },
       },
     },
     answerResults: {
@@ -88,21 +97,99 @@ export const quizMachine = createMachine({
         QUESTIONS: {
           target: 'game',
           actions: assign({
-            questions: ({ event }) => event.questions,
+            questions: ({ event }) => {
+              console.log(
+                '[State Machine] Processing QUESTIONS in answerResults state',
+                event
+              );
+
+              // Find the active question and log it
+              const activeQuestion = event.questions.find((q) => q.isActive);
+              if (activeQuestion) {
+                console.log(
+                  '[State Machine] Found active question, transitioning to game',
+                  activeQuestion.question
+                );
+              } else {
+                console.warn(
+                  '[State Machine] No active question found in QUESTIONS event'
+                );
+              }
+
+              return event.questions;
+            },
           }),
         },
-        NEXT: 'question',
+        NEXT: {
+          // Explicitly transition to game state
+          target: 'game',
+          actions: ({ context }) => {
+            console.log(
+              '[State Machine] Processing NEXT event in answerResults state'
+            );
+            console.log('[State Machine] Forcing transition to game state');
+
+            // Find active question for debugging
+            const activeQuestion = context.questions.find((q) => q.isActive);
+            console.log(
+              '[State Machine] Active question during transition:',
+              activeQuestion ? activeQuestion.question : 'None'
+            );
+          },
+        },
+        // Add a direct transition for emergency situations
+        DIRECT_TO_GAME: {
+          target: 'game',
+          actions: [
+            () =>
+              console.log(
+                '[State Machine] EMERGENCY direct transition to game state'
+              ),
+            assign({
+              questions: ({ context, event }) => {
+                // If the event includes questions, use them, otherwise keep current
+                return event.questions || context.questions;
+              },
+            }),
+          ],
+        },
         END: 'results',
+      },
+      // Automatic transition after showing results
+      after: {
+        // After 5 seconds in answerResults, automatically transition back to game
+        5000: {
+          target: 'game',
+          actions: () =>
+            console.log(
+              '[State Machine] AUTOMATIC timeout transition to game after 5s'
+            ),
+        },
       },
     },
     gameOver: {
       on: {
         RESTART: 'identify',
+        // Add transition to handle potential next question requests from gameOver state
+        NEXT: {
+          target: 'game',
+          actions: () =>
+            console.log(
+              '[State Machine] Attempting to continue from gameOver state'
+            ),
+        },
       },
     },
     question: {
       on: {
-        NEXT: 'question',
+        // Modify to ensure NEXT works properly
+        NEXT: {
+          target: 'game', // Go to game state instead of looping in question
+          actions: () =>
+            console.log(
+              '[State Machine] Moving to next question via game state'
+            ),
+        },
         END: 'results',
       },
     },
@@ -110,6 +197,21 @@ export const quizMachine = createMachine({
       on: {
         RESTART: 'identify',
       },
+    },
+  },
+  on: {
+    UPDATE_USER: {
+      actions: assign({
+        user: ({ context, event }) => ({
+          ...context.user,
+          ...event.user,
+        }),
+      }),
+    },
+    UPDATE_CLIENTS: {
+      actions: assign({
+        clients: ({ event }) => event.clients,
+      }),
     },
   },
 });

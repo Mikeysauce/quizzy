@@ -85,6 +85,7 @@ interface User {
   score: number;
   name?: string;
   answers: Record<string, string[]>;
+  ready?: boolean; // Add readiness flag
 }
 
 let currentQuestion = 0;
@@ -188,18 +189,34 @@ const broadcastAnswerResults = (lobby: string, questionId: string) => {
         })
       );
 
-      setTimeout(
-        () => transitionToNextQuestionOrEndGameIfNoQuestionsRemaining(lobby),
-        13000
-      );
+      // Remove the automatic progression
+      // setTimeout(
+      //   () => transitionToNextQuestionOrEndGameIfNoQuestionsRemaining(lobby),
+      //   13000
+      // );
     }
   });
 
   const newQuestions = structuredClone(questions);
-
   newQuestions[questionIdx].users = usersWithCorrectAnswer;
-
   storeQuestionsInMemory(lobby, newQuestions);
+
+  // Reset readiness state for all users in this lobby
+  Object.values(users).forEach((user) => {
+    user.ready = false;
+  });
+
+  // Broadcast updated clients with ready state
+  broadcastClients();
+};
+
+// New function to check if all clients are ready
+const checkAllClientsReady = (lobby: string) => {
+  const lobbyUsers = Object.values(users).filter((user) =>
+    Object.keys(user.answers).includes(lobby)
+  );
+
+  return lobbyUsers.length > 0 && lobbyUsers.every((user) => user.ready);
 };
 
 const checkThatAllUsersHaveAnswered = (lobby: string, questionId: string) => {
@@ -253,6 +270,37 @@ wss.on('connection', (ws: WebSocket) => {
 
       checkThatAllUsersHaveAnswered(data.lobby, data.questionId);
     }
+
+    // New client controls
+    if (data.type === 'setReady') {
+      const user = users[data.userId];
+      if (user) {
+        user.ready = data.ready;
+        broadcastClients();
+
+        // If all clients are ready and requester is admin, progress the game
+        if (data.ready && user.isAdmin && checkAllClientsReady(data.lobby)) {
+          transitionToNextQuestionOrEndGameIfNoQuestionsRemaining(data.lobby);
+        }
+      }
+    }
+
+    if (data.type === 'nextQuestion' && users[data.userId]?.isAdmin) {
+      transitionToNextQuestionOrEndGameIfNoQuestionsRemaining(data.lobby);
+    }
+
+    if (data.type === 'requestGameState') {
+      const questions = getQuestionsFromMemory(data.lobby);
+      if (questions && ws.readyState === WebSocket.OPEN) {
+        ws.send(
+          JSON.stringify({
+            type: 'gameState',
+            questions: structuredClone(questions),
+            currentQuestion: questions.findIndex((q) => q.isActive),
+          })
+        );
+      }
+    }
   });
 
   ws.on('close', (x) => {
@@ -290,6 +338,7 @@ function broadcastClients(): void {
     score: user.score,
     ...(user.name && { name: user.name }),
     answers: user.answers,
+    ready: user.ready || false,
   }));
 
   console.log('clientList', clientList);

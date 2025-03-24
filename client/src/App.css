@@ -1,6 +1,22 @@
 @import '@radix-ui/colors/black-alpha.css';
 @import '@radix-ui/colors/violet.css';
 
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+* + *,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+#root {
+  padding: 1rem 2rem;
+}
+
 /* reset */
 button {
   all: unset;

@@ -245,12 +245,14 @@ function GameLobby({ clients, user, sendQuestionsToServer }: GameLobbyProps) {
                   <Button onClick={saveQuestions}>
                     Save questions for later
                   </Button>
-                  <Button
-                    color="green"
-                    onClick={() => sendQuestionsToServer(questions)}
-                  >
-                    Continue to game
-                  </Button>
+                  {clients.length > 1 && (
+                    <Button
+                      color="green"
+                      onClick={() => sendQuestionsToServer(questions)}
+                    >
+                      Continue to game
+                    </Button>
+                  )}
                 </div>
 
                 <Button

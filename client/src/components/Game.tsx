@@ -1,8 +1,11 @@
 import * as RadioGroup from '@radix-ui/react-radio-group';
-import { Button, Progress } from '@radix-ui/themes';
-import { useEffect, useRef, useState } from 'react';
+import { Progress, Button } from '@radix-ui/themes';
+import { memo, useEffect, useRef, useState, useCallback } from 'react';
 import styles from './game.module.scss';
 import * as Label from '@radix-ui/react-label';
+import { motion, AnimatePresence } from 'framer-motion';
+import toast from 'react-hot-toast';
+import { CountdownCircleTimer } from 'react-countdown-circle-timer';
 
 interface Question {
   imagePath?: string;
@@ -20,117 +23,562 @@ interface GameProps {
   questions: Question[];
   sendAnswerToServer: (createdAt: string, answer: string) => void;
   isResults: boolean;
+  forceNextQuestion?: () => void; // Add this prop
+  isAdmin?: boolean;
 }
 
-function Game({ questions, sendAnswerToServer, isResults }: GameProps) {
+function GameComponent({
+  questions,
+  sendAnswerToServer,
+  isResults,
+  isAdmin,
+  forceNextQuestion,
+}: GameProps) {
+  // Use refs to prevent rerenders for logging
+  const logRef = useRef({
+    prevQuestions: null as Question[] | null,
+    prevIsResults: null as boolean | null,
+  });
+
+  // Only log when important props change, not on every render
+  if (
+    questions !== logRef.current.prevQuestions ||
+    isResults !== logRef.current.prevIsResults
+  ) {
+    console.log('Game component receiving new props', {
+      questionsCount: questions.length,
+      isResults,
+      activeQuestion: questions.find((q) => q.isActive)?.question,
+    });
+    logRef.current = { prevQuestions: questions, prevIsResults: isResults };
+  }
+
   const initRef = useRef<Question | null>(null);
   const [selectedAnswer, setSelectedAnswer] = useState('');
   const [hasSubmitted, setHasSubmitted] = useState(false);
-  const currentQuestion = questions.find((question) => question.isActive);
+  const [showFeedback, setShowFeedback] = useState(false);
+  const [timeLeft, setTimeLeft] = useState(30); // 30 seconds per question
+  const [resultsShownTimestamp, setResultsShownTimestamp] = useState<
+    number | null
+  >(null);
 
+  // Find the active question - wrapped in useRef to prevent rerenders
+  const currentQuestionRef = useRef<Question | null>(null);
+  currentQuestionRef.current =
+    questions.find((question) => question.isActive) || null;
+  const currentQuestion = currentQuestionRef.current;
+
+  // Check if we've completed all questions and notify server
   useEffect(() => {
-    if (!initRef.current && currentQuestion) {
-      initRef.current = currentQuestion;
+    // Logic to detect when the game should end
+    if (
+      isResults &&
+      questions.length > 0 &&
+      !questions.some((q) => q.isActive) &&
+      forceNextQuestion
+    ) {
+      console.log('All questions appear to be completed - notifying game over');
+
+      // Wait briefly for the last results to be visible, then signal game completion
+      const gameOverTimer = setTimeout(() => {
+        // Signal to the parent that we need to end the game
+        // This will cause App to tell the server the game is over
+        forceNextQuestion();
+
+        // And dispatch a synthetic event with special flag for game over
+        const gameOverEvent = new CustomEvent('quizzy:requestGameEnd', {
+          detail: { allQuestionsAnswered: true },
+        });
+        window.dispatchEvent(gameOverEvent);
+      }, 5000);
+
+      return () => clearTimeout(gameOverTimer);
     }
+  }, [questions, isResults, forceNextQuestion]);
+
+  // Add a utility function to advance to next question
+  const advanceToNextQuestion = useCallback(() => {
+    if (!forceNextQuestion) return;
+
+    // Find current active question
+    const activeIndex = questions.findIndex((q) => q.isActive);
+    console.log('Current active question index:', activeIndex);
+
+    if (activeIndex === -1) {
+      // No active question found, try to activate the first one
+      if (questions.length > 0) {
+        console.log('No active question found, activating first question');
+        forceNextQuestion();
+      }
+      return;
+    }
+
+    // Check if there's a next question
+    if (activeIndex < questions.length - 1) {
+      console.log('Advancing to next question:', activeIndex + 1);
+      forceNextQuestion();
+    } else {
+      // We're at the last question, trigger game over
+      console.log('Reached end of questions, triggering game over');
+      const gameOverEvent = new CustomEvent('quizzy:requestGameEnd', {
+        detail: { allQuestionsAnswered: true },
+      });
+      window.dispatchEvent(gameOverEvent);
+    }
+  }, [questions, forceNextQuestion]);
+
+  // Add a more aggressive auto-advance timer
+  useEffect(() => {
+    // If we're showing results, set a timer to advance automatically
+    if (isResults && forceNextQuestion) {
+      const timer = setTimeout(() => {
+        console.log('Auto-advancing after timeout');
+        advanceToNextQuestion();
+      }, 5000); // 5 seconds
+
+      return () => clearTimeout(timer);
+    }
+  }, [isResults, advanceToNextQuestion, forceNextQuestion]);
+
+  // Auto-transition to next question after showing results
+  useEffect(() => {
+    if (isResults && resultsShownTimestamp) {
+      // Set a timeout to auto-continue after 5 seconds
+      const autoProgressTimer = setTimeout(() => {
+        console.log('Auto-progressing after showing results for 5 seconds');
+        if (forceNextQuestion) {
+          forceNextQuestion();
+        }
+      }, 5000);
+
+      return () => clearTimeout(autoProgressTimer);
+    }
+  }, [isResults, resultsShownTimestamp, forceNextQuestion]);
+
+  // Critical effect to handle changes in isResults - memoized with useCallback
+  const handleResultsChange = useCallback(() => {
+    if (isResults && !showFeedback) {
+      setShowFeedback(true);
+      setResultsShownTimestamp(Date.now());
+
+      // Play sound based on correct/incorrect answer
+      const correctSound = new Audio('/sounds/correct.mp3');
+      const incorrectSound = new Audio('/sounds/incorrect.mp3');
+
+      if (selectedAnswer === currentQuestion?.correct.answer) {
+        correctSound.play();
+        toast.success('Correct answer!', { icon: '✅' });
+      } else if (selectedAnswer) {
+        incorrectSound.play();
+        toast.error('Incorrect answer!', { icon: '❌' });
+      }
+    } else if (!isResults && showFeedback) {
+      // This means we've transitioned from results back to the question state
+      console.log('Transitioning from results back to question state');
+      setShowFeedback(false);
+      setResultsShownTimestamp(null);
+
+      console.log('Waiting for server to activate next question...');
+
+      // Check if we have no active questions (potentially end of game)
+      if (!questions.some((q) => q.isActive)) {
+        console.log('No active questions found - need server update');
+
+        // Let's proactively fix the issue by activating what should be the next question
+        const lastAnsweredIndex = questions.findIndex(
+          (q) => q.users && q.users.length > 0
+        );
+
+        if (
+          lastAnsweredIndex >= 0 &&
+          lastAnsweredIndex < questions.length - 1
+        ) {
+          console.log(
+            'Found last answered question at index:',
+            lastAnsweredIndex
+          );
+          console.log(
+            'Trying to activate next question at index:',
+            lastAnsweredIndex + 1
+          );
+
+          // If there was a previous question with answers, activate the next one
+          const fixedQuestions = [...questions];
+          fixedQuestions.forEach((q, i) => {
+            q.isActive = i === lastAnsweredIndex + 1;
+          });
+
+          // This assumes there's an external update mechanism
+          // We need a way to notify parent component
+          if (forceNextQuestion) {
+            forceNextQuestion();
+          }
+        } else if (questions.length > 0) {
+          // If we can't find a last answered question, just activate the first one
+          console.log(
+            'No answered questions found, trying to activate first question'
+          );
+          const fixedQuestions = [...questions];
+          fixedQuestions[0].isActive = true;
+
+          if (forceNextQuestion) {
+            forceNextQuestion();
+          }
+        }
+
+        // Set a short timeout for emergency recovery
+        const recoveryTimer = setTimeout(() => {
+          if (!questions.some((q) => q.isActive) && forceNextQuestion) {
+            console.log(
+              'EMERGENCY: Still no active question after fix attempt'
+            );
+            forceNextQuestion();
+          }
+        }, 1000);
+
+        return () => clearTimeout(recoveryTimer);
+      }
+    }
+  }, [
+    isResults,
+    showFeedback,
+    selectedAnswer,
+    currentQuestion,
+    questions,
+    forceNextQuestion,
+    advanceToNextQuestion,
+  ]);
+
+  // Apply the callback effect
+  useEffect(() => {
+    handleResultsChange();
+  }, [handleResultsChange]);
+
+  // Reset state when active question changes - optimized
+  useEffect(() => {
+    if (!currentQuestion) return;
 
     if (
-      initRef.current &&
-      currentQuestion &&
+      !initRef.current ||
       initRef.current.question !== currentQuestion.question
     ) {
+      console.log(
+        'Resetting state for new question:',
+        currentQuestion.question
+      );
+      initRef.current = currentQuestion;
       setHasSubmitted(false);
       setSelectedAnswer('');
-      initRef.current = currentQuestion;
+      setShowFeedback(false);
+      setResultsShownTimestamp(null);
+      toast.success('New question!', { icon: '❓' });
     }
-  }, [currentQuestion]);
+  }, [currentQuestion?.question]); // Only depend on question text, not entire object
+
+  // Timer tick sound effect
+  useEffect(() => {
+    const tickSound = new Audio('/sounds/tick.mp3');
+
+    if (timeLeft <= 5 && timeLeft > 0 && !hasSubmitted) {
+      tickSound.play();
+    }
+  }, [timeLeft, hasSubmitted]);
+
+  // Add function to check if this is the last question
+  const isLastQuestion = useCallback(() => {
+    const activeIndex = questions.findIndex((q) => q.isActive);
+    return activeIndex === questions.length - 1;
+  }, [questions]);
+
+  // Add a direct function to trigger game end
+  const triggerGameEnd = useCallback(() => {
+    console.log('Game completed - directly triggering game end');
+    // Create and dispatch the event for any components listening for it
+    const gameOverEvent = new CustomEvent('quizzy:gameOver', {
+      detail: { allQuestionsAnswered: true },
+    });
+    window.dispatchEvent(gameOverEvent);
+
+    // If forceNextQuestion exists, call it to ensure state transitions
+    if (forceNextQuestion) {
+      forceNextQuestion();
+    }
+  }, [forceNextQuestion]);
 
   if (!currentQuestion) {
-    return <p>uhoh</p>;
+    return (
+      <div className={styles.loadingContainer}>
+        <div className={styles.loader}></div>
+        <p>Loading question...</p>
+      </div>
+    );
   }
 
   const { question, createdAt, answers, correct, imagePath } = currentQuestion;
 
+  // Debug the structure of answers
+  console.log('Question answers:', answers);
+
   const handleSubmit = (e: { preventDefault: () => void; target: any }) => {
     e.preventDefault();
-    const form = e.target;
-    const answer = form.querySelector('input[type="radio"]:checked').value;
 
+    // Get the selected radio button
+    const radioInput = e.target.querySelector('input[type="radio"]:checked');
+
+    if (!radioInput) {
+      toast.error('Please select an answer first!');
+      return;
+    }
+
+    const answer = radioInput.value;
+
+    console.log('Submitting answer', { createdAt, answer });
     sendAnswerToServer(createdAt, answer);
     setHasSubmitted(true);
+    toast.success('Answer submitted!');
   };
 
   const correctAnswer = correct.answer;
 
   return (
-    <form className={styles.card} onSubmit={handleSubmit}>
-      <div className={styles.cardHeader}>
-        <h2 className={styles.cardTitle}>{question}</h2>
-      </div>
-      <div className={styles.cardContent}>
-        {imagePath && (
-          <div className={styles.imageContainer}>
-            <img
-              src={imagePath}
-              alt="Quiz question image"
-              className={styles.gamePhoto}
-            />
-          </div>
-        )}
-        <RadioGroup.Root
-          onValueChange={setSelectedAnswer}
-          className={styles.radioGroup}
-          disabled={hasSubmitted || isResults}
-        >
-          {answers.map(({ answer, index }) => (
-            <div key={index} className={styles.radioItem}>
-              <RadioGroup.Item
-                value={answer}
-                id={`answer-${index}`}
-                className={styles.radioGroupItem}
+    <AnimatePresence mode="wait">
+      <motion.form
+        className={styles.card}
+        onSubmit={handleSubmit}
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        exit={{ opacity: 0, y: -20 }}
+        transition={{ duration: 0.5 }}
+        data-testid={isResults ? 'question-results' : 'question-form'}
+      >
+        <div className={styles.cardHeader}>
+          <h2 className={styles.cardTitle}>{question}</h2>
+
+          {!isResults && !hasSubmitted && (
+            <div className={styles.timerContainer}>
+              <CountdownCircleTimer
+                isPlaying
+                duration={30}
+                colors={['#3b82f6', '#F7B801', '#A30000']}
+                colorsTime={[30, 15, 5]}
+                size={50}
+                strokeWidth={6}
+                onComplete={() => {
+                  if (!hasSubmitted) {
+                    toast.error("Time's up!");
+                  }
+                  return { shouldRepeat: false };
+                }}
+                onUpdate={(remainingTime) => setTimeLeft(remainingTime)}
               >
-                <RadioGroup.Indicator className={styles.radioGroupIndicator} />
-              </RadioGroup.Item>
-              <Label.Root
-                htmlFor={`answer-${index}`}
-                className={`${styles.label} ${
-                  isResults
-                    ? answer === correctAnswer
-                      ? styles.correct
-                      : answer === selectedAnswer
-                      ? styles.incorrect
-                      : styles.disabled
-                    : ''
-                }`}
-              >
-                {answer}
-              </Label.Root>
+                {({ remainingTime }) => remainingTime}
+              </CountdownCircleTimer>
             </div>
-          ))}
-        </RadioGroup.Root>
-        <div className={styles.cardFooter}>
-          {!isResults && (
-            <button
-              type="submit"
-              disabled={!selectedAnswer || hasSubmitted}
-              className={styles.submitButton}
-            >
-              {hasSubmitted ? 'Submitted' : 'Submit Answer'}
-            </button>
           )}
         </div>
-        {hasSubmitted && !isResults && (
-          <div className={styles.cardWaiting}>
-            <p>Your answer has been submitted, waiting for other players!</p>
+
+        <div className={styles.cardContent}>
+          {imagePath && (
+            <div className={styles.imageContainer}>
+              <motion.img
+                src={imagePath}
+                alt="Quiz question image"
+                className={styles.gamePhoto}
+                initial={{ scale: 0.9, opacity: 0.8 }}
+                animate={{ scale: 1, opacity: 1 }}
+                transition={{ duration: 0.5 }}
+              />
+            </div>
+          )}
+
+          <RadioGroup.Root
+            onValueChange={setSelectedAnswer}
+            className={styles.radioGroup}
+            disabled={hasSubmitted || isResults}
+          >
+            {Array.isArray(answers) &&
+              answers.map((answerItem, index) => {
+                // Handle both string and object formats
+                const answerText =
+                  typeof answerItem === 'string'
+                    ? answerItem
+                    : answerItem &&
+                      typeof answerItem === 'object' &&
+                      'answer' in answerItem
+                    ? answerItem.answer
+                    : `Answer ${index}`;
+
+                return (
+                  <motion.div
+                    key={index}
+                    className={styles.radioItem}
+                    initial={{ opacity: 0, x: -10 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    transition={{ duration: 0.2, delay: index * 0.1 }}
+                  >
+                    <RadioGroup.Item
+                      value={answerText}
+                      id={`answer-${index}`}
+                      className={styles.radioGroupItem}
+                    >
+                      <RadioGroup.Indicator
+                        className={styles.radioGroupIndicator}
+                      />
+                    </RadioGroup.Item>
+                    <Label.Root
+                      htmlFor={`answer-${index}`}
+                      className={`${styles.label} ${
+                        isResults
+                          ? answerText === correctAnswer
+                            ? styles.correct
+                            : answerText === selectedAnswer
+                            ? styles.incorrect
+                            : styles.disabled
+                          : ''
+                      }`}
+                    >
+                      {answerText}
+
+                      {isResults && answerText === correctAnswer && (
+                        <motion.span
+                          className={styles.correctIcon}
+                          initial={{ scale: 0 }}
+                          animate={{ scale: 1 }}
+                          transition={{
+                            damping: 10,
+                            type: 'spring',
+                            stiffness: 300,
+                          }}
+                        >
+                          ✅
+                        </motion.span>
+                      )}
+
+                      {isResults &&
+                        answerText === selectedAnswer &&
+                        answerText !== correctAnswer && (
+                          <motion.span
+                            className={styles.incorrectIcon}
+                            initial={{ scale: 0 }}
+                            animate={{ scale: 1 }}
+                            transition={{
+                              type: 'spring',
+                              stiffness: 300,
+                              damping: 10,
+                            }}
+                          >
+                            ❌
+                          </motion.span>
+                        )}
+                    </Label.Root>
+                  </motion.div>
+                );
+              })}
+          </RadioGroup.Root>
+
+          <div className={styles.cardFooter}>
+            {!isResults && (
+              <motion.button
+                type="submit"
+                disabled={!selectedAnswer || hasSubmitted}
+                className={styles.submitButton}
+                whileHover={{ scale: 1.03 }}
+                whileTap={{ scale: 0.98 }}
+              >
+                {hasSubmitted ? 'Submitted' : 'Submit Answer'}
+              </motion.button>
+            )}
           </div>
-        )}
-        {isResults && (
-          <div>
-            <Progress duration="13s" />
-          </div>
-        )}
-      </div>
-    </form>
+
+          {hasSubmitted &&
+            !isResults &&
+            initRef.current?.question === currentQuestion?.question && (
+              <div className={styles.cardWaiting}>
+                <p>
+                  Your answer has been submitted, waiting for other players!
+                </p>
+                <div className={styles.pulsingDot}></div>
+              </div>
+            )}
+
+          {isResults && (
+            <div
+              className={styles.resultsContainer}
+              data-testid="results-container"
+            >
+              <h3>Results</h3>
+              <p>The correct answer was: {correctAnswer}</p>
+              <Progress value={100} size="3" />
+
+              {/* Show different buttons based on whether this is the last question */}
+              {isAdmin &&
+                (isLastQuestion() ? (
+                  <Button
+                    size="3"
+                    color="blue"
+                    onClick={triggerGameEnd}
+                    style={{
+                      marginTop: '15px',
+                      fontWeight: 'bold',
+                      animation: 'pulse 2s infinite',
+                    }}
+                  >
+                    View Final Results →
+                  </Button>
+                ) : (
+                  <Button
+                    size="3"
+                    color="green"
+                    onClick={advanceToNextQuestion}
+                    style={{
+                      marginTop: '15px',
+                      fontWeight: 'bold',
+                      animation: 'pulse 2s infinite',
+                    }}
+                  >
+                    Next Question →
+                  </Button>
+                ))}
+
+              {/* Keep emergency button as fallback, but not on last question */}
+              {resultsShownTimestamp &&
+                Date.now() - resultsShownTimestamp > 8000 &&
+                forceNextQuestion &&
+                !isLastQuestion() && (
+                  <Button
+                    size="2"
+                    color="red"
+                    onClick={advanceToNextQuestion}
+                    style={{ marginTop: '10px' }}
+                  >
+                    Stuck? Click to Continue
+                  </Button>
+                )}
+            </div>
+          )}
+        </div>
+      </motion.form>
+    </AnimatePresence>
   );
 }
 
-export default Game;
+// Optimize the memo comparison to prevent unnecessary rerenders
+export default memo(GameComponent, (prevProps, nextProps) => {
+  // Only rerender if any of these important props change
+  const prevActiveQ = prevProps.questions.find((q) => q.isActive);
+  const nextActiveQ = nextProps.questions.find((q) => q.isActive);
+
+  const shouldSkipRender =
+    // Same results state
+    prevProps.isResults === nextProps.isResults &&
+    // Same active question ID and content
+    prevActiveQ?.createdAt === nextActiveQ?.createdAt &&
+    prevActiveQ?.question === nextActiveQ?.question;
+
+  // Log only when we're going to rerender
+  if (!shouldSkipRender) {
+    console.log('Game will rerender due to prop changes');
+  }
+
+  return shouldSkipRender;
+});
