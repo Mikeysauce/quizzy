@@ -1,13 +1,18 @@
-import { useEffect, useRef, useCallback } from 'react';
+import { useEffect, useRef, useCallback, useState } from 'react';
 import { useMachine } from '@xstate/react';
 import { quizMachine } from '../quizMachine';
+import toast from 'react-hot-toast';
 
 export const useQuizMachine = () => {
   const [gameState, sendMachineCommand] = useMachine(quizMachine);
   const wsRef = useRef<WebSocket | null>(null);
-  const lobby = new URLSearchParams(window.location.search).get('lobby');
+  const [isConnecting, setIsConnecting] = useState(false);
+  const lobby =
+    new URLSearchParams(window.location.search).get('lobby') ?? 'default-lobby';
   const websocketHost = import.meta.env.VITE_WEBSOCKET_HOST ?? 'localhost:3000';
   const websocketProtocol = websocketHost.includes('localhost') ? 'ws' : 'wss';
+  const [error, setError] = useState<string | null>(null);
+  const pendingNameRef = useRef<string | null>(null);
 
   // New client control functions
   const setReady = useCallback(
@@ -256,17 +261,36 @@ export const useQuizMachine = () => {
     };
   }, [sendMachineCommand]);
 
-  useEffect(() => {
-    if (gameState.matches('lobby') && !wsRef.current) {
-      const ws = new WebSocket(`${websocketProtocol}://${websocketHost}`);
+  // Simplified submitName function
+  const submitName = useCallback(
+    (name: string) => {
+      // Store the name we're trying to submit
+      pendingNameRef.current = name;
 
+      // If we already have a websocket connection, just send the name
+      if (wsRef.current?.readyState === WebSocket.OPEN) {
+        wsRef.current.send(
+          JSON.stringify({
+            type: 'setName',
+            name,
+            lobby,
+          })
+        );
+        return;
+      }
+
+      // Otherwise we need to create a connection first
+      setIsConnecting(true);
+      setError(null);
+
+      const ws = new WebSocket(`${websocketProtocol}://${websocketHost}`);
       wsRef.current = ws;
 
       ws.onopen = () => {
         ws.send(
           JSON.stringify({
             type: 'setName',
-            name: gameState.context.user.name,
+            name,
             lobby,
           })
         );
@@ -274,7 +298,159 @@ export const useQuizMachine = () => {
 
       ws.onmessage = (event) => {
         const data = JSON.parse(event.data);
+        console.log('[WebSocket] Initial response:', data);
+
+        if (data.type === 'error') {
+          console.error('[WebSocket] Error:', data.message);
+          setError(data.message);
+          pendingNameRef.current = null;
+          setIsConnecting(false);
+
+          if (data.error === 'username_taken') {
+            toast.error(data.message || 'Username already taken', {
+              duration: 5000,
+              icon: '⚠️',
+            });
+            sendMachineCommand({ type: 'USERNAME_ERROR' });
+          }
+          return;
+        }
+
+        // Handle direct nameConfirmed response
+        if (data.type === 'nameConfirmed' && pendingNameRef.current) {
+          // Update the user info with admin status
+          sendMachineCommand({
+            type: 'SUBMIT_NAME',
+            name: pendingNameRef.current,
+          });
+
+          // Also update the user with admin status if present
+          if (data.isAdmin !== undefined) {
+            sendMachineCommand({
+              type: 'UPDATE_USER',
+              user: {
+                id: data.userId,
+                isAdmin: data.isAdmin,
+                name: data.name,
+              },
+            });
+          }
+
+          setupMessageHandlers(ws);
+          setIsConnecting(false);
+          pendingNameRef.current = null;
+          return;
+        }
+
+        // For other message types, set up the regular message handlers
+        setupMessageHandlers(ws);
+
+        // Only if we didn't get an error, update the name and proceed to lobby
+        if (pendingNameRef.current) {
+          sendMachineCommand({
+            type: 'SUBMIT_NAME',
+            name: pendingNameRef.current,
+          });
+          setIsConnecting(false);
+          pendingNameRef.current = null;
+        }
+      };
+
+      ws.onerror = () => {
+        toast.error('Failed to connect to server', { duration: 5000 });
+        setError('Connection failed. Please try again.');
+        setIsConnecting(false);
+        pendingNameRef.current = null;
+      };
+
+      ws.onclose = () => {
+        wsRef.current = null;
+        if (pendingNameRef.current) {
+          setError('Connection closed. Please try again.');
+          setIsConnecting(false);
+          pendingNameRef.current = null;
+        }
+      };
+    },
+    [websocketProtocol, websocketHost, lobby, sendMachineCommand]
+  );
+
+  // Simplified message handlers
+  const setupMessageHandlers = useCallback(
+    (ws: WebSocket) => {
+      ws.onmessage = (event) => {
+        const data = JSON.parse(event.data);
         console.log('[WebSocket] Received:', data);
+
+        // Handle error messages
+        if (data.type === 'error') {
+          console.error('[WebSocket] Error:', data.message);
+          setError(data.message);
+
+          if (data.error === 'username_taken') {
+            toast.error(data.message || 'Username already taken', {
+              duration: 5000,
+              icon: '⚠️',
+            });
+          }
+          return;
+        }
+
+        // Handle welcome or updateUser message with admin information
+        if (data.type === 'welcome' || data.type === 'updateUser') {
+          console.log(
+            `[WebSocket] Received ${data.type} with admin status:`,
+            data.isAdmin
+          );
+
+          // Make sure we have the correct user ID and it matches our context
+          if (
+            data.id === gameState.context.user.id ||
+            data.userId === gameState.context.user.id
+          ) {
+            sendMachineCommand({
+              type: 'UPDATE_USER',
+              user: {
+                id: data.userId || data.id,
+                isAdmin: data.isAdmin,
+                ...(data.name && { name: data.name }),
+              },
+            });
+
+            console.log(`[WebSocket] Updated user status:`, {
+              id: data.userId || data.id,
+              isAdmin: data.isAdmin,
+              name: data.name,
+            });
+          }
+        }
+
+        // Handle clients update - properly update local state
+        if (data.type === 'clients') {
+          console.log('[WebSocket] Clients update received:', data.clients);
+
+          // Update the context with the new client list
+          sendMachineCommand({
+            type: 'UPDATE_CLIENTS',
+            clients: data.clients,
+          });
+
+          // If the current user is in the client list, update their state
+          const currentUser = data.clients.find(
+            (client) => client.name === gameState.context.user.name
+          );
+
+          if (currentUser) {
+            sendMachineCommand({
+              type: 'UPDATE_USER',
+              user: {
+                id: currentUser.id,
+                isAdmin: currentUser.isAdmin,
+                name: currentUser.name,
+              },
+            });
+          }
+        }
 
         // Handle different message types
         if (data.type === 'gameOver') {
@@ -394,18 +570,17 @@ export const useQuizMachine = () => {
           });
         }
       };
+    },
+    [sendMachineCommand, gameState.context.user.id, gameState.context.user.name]
+  );
 
-      ws.onclose = () => {
-        wsRef.current = null;
-      };
+  useEffect(() => {
+    // We've moved the connection initialization to the submitName function
+    // This effect now only needs to handle existing connections
+    if (gameState.matches('lobby') && wsRef.current) {
+      setupMessageHandlers(wsRef.current);
     }
-
-    // return () => {
-    //   if (wsRef.current) {
-    //     wsRef.current.close();
-    //   }
-    // };
-  }, [gameState, sendMachineCommand, websocketHost, lobby]);
+  }, [gameState, setupMessageHandlers]);
 
   const sendQuestionsToServer = (questions: any[]) => {
     wsRef.current?.send(
@@ -428,8 +603,11 @@ export const useQuizMachine = () => {
   return {
     gameState,
     sendMachineCommand,
+    submitName, // Export the new submitName function instead of using sendMachineCommand directly
     sendQuestionsToServer,
     sendAnswerToServer,
+    error,
+    isConnecting, // Expose loading state
     // Expose client control functions
     clientControls: {
       setReady,

@@ -74,6 +74,10 @@ export interface EndEvent extends EventObject {
   type: 'END';
 }
 
+export interface UsernameErrorEvent extends EventObject {
+  type: 'USERNAME_ERROR';
+}
+
 export type QuizEvent =
   | SubmitNameEvent
   | JoinEvent
@@ -84,4 +88,5 @@ export type QuizEvent =
   | GameOverEvent
   | RestartEvent
   | NextEvent
-  | EndEvent;
+  | EndEvent
+  | UsernameErrorEvent;

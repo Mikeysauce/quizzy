@@ -82,18 +82,19 @@ export interface Question {
 
 interface User {
   id: string;
-  ws: WebSocket;
+  ws: WebSocket; // This reference needs to be properly maintained
   isAdmin: boolean;
   score: number;
   name?: string;
   answers: Record<string, string[]>;
-  ready?: boolean; // Add readiness flag
+  ready?: boolean;
 }
 
 let currentQuestion = 0;
 let users: Record<string, User> = {};
 let gameStarted = false;
 let questionMap = new Map<string, Question[]>();
+let gameEndedLobbies = new Set<string>(); // Track lobbies where game has ended
 
 const storeQuestionsInMemory = (lobby: string, questions: Question[]) => {
   questionMap.set(lobby, questions);
@@ -105,14 +106,26 @@ const getQuestionsFromMemory = (lobby: string): Question[] => {
 
 // app.use(express.static('public'));
 
-const createUser = (name: string, lobby: string) => ({
-  name,
-  id: uuidv4(),
-  isAdmin: Object.keys(users).length === 0,
-  answers: {
-    [lobby]: {},
-  },
-});
+const createUser = (name: string, lobby: string) => {
+  // Get only users in this lobby - reliable implementation
+  const usersInLobby = Object.values(users).filter(
+    (user) =>
+      user.answers &&
+      typeof user.answers === 'object' &&
+      Object.keys(user.answers).includes(lobby)
+  );
+
+  // Create and return a new user with the appropriate initial state
+  return {
+    name,
+    id: uuidv4(),
+    isAdmin: usersInLobby.length === 0, // First user in the lobby becomes admin
+    score: 0, // Initialize score
+    answers: {
+      [lobby]: {},
+    },
+  };
+};
 
 const broadcastQuestionsToAllClients = (questions: Question[]) => {
   wss.clients.forEach((client) => {
@@ -126,6 +139,10 @@ const transitionToNextQuestionOrEndGameIfNoQuestionsRemaining = (
   lobby: string
 ) => {
   const questions = getQuestionsFromMemory(lobby);
+  if (!questions || !Array.isArray(questions)) {
+    console.error(`No questions found for lobby ${lobby}`);
+    return;
+  }
 
   console.log('questions', questions);
 
@@ -158,6 +175,11 @@ const transitionToNextQuestionOrEndGameIfNoQuestionsRemaining = (
 
 const broadcastAnswerResults = (lobby: string, questionId: string) => {
   const questions = getQuestionsFromMemory(lobby);
+  if (!questions) {
+    console.error(`No questions found for lobby ${lobby}`);
+    return;
+  }
+
   const questionIdx = questions.findIndex((q) => q.createdAt === questionId);
   const question = questions[questionIdx];
 
@@ -177,7 +199,9 @@ const broadcastAnswerResults = (lobby: string, questionId: string) => {
   });
 
   usersWithCorrectAnswer.forEach((user) => {
-    users[user.id].score += user.score;
+    if (users[user.id]) {
+      users[user.id].score += user.score;
+    }
   });
 
   wss.clients.forEach((client) => {
@@ -190,12 +214,6 @@ const broadcastAnswerResults = (lobby: string, questionId: string) => {
           users: usersWithCorrectAnswer,
         })
       );
-
-      // Remove the automatic progression
-      // setTimeout(
-      //   () => transitionToNextQuestionOrEndGameIfNoQuestionsRemaining(lobby),
-      //   13000
-      // );
     }
   });
 
@@ -205,28 +223,37 @@ const broadcastAnswerResults = (lobby: string, questionId: string) => {
 
   // Reset readiness state for all users in this lobby
   Object.values(users).forEach((user) => {
-    user.ready = false;
+    if (user.answers && Object.keys(user.answers).includes(lobby)) {
+      user.ready = false;
+    }
   });
 
   // Broadcast updated clients with ready state
-  broadcastClients();
+  broadcastClients(lobby);
 };
 
 // New function to check if all clients are ready
 const checkAllClientsReady = (lobby: string) => {
-  const lobbyUsers = Object.values(users).filter((user) =>
-    Object.keys(user.answers).includes(lobby)
+  const lobbyUsers = Object.values(users).filter(
+    (user) => user.answers && Object.keys(user.answers).includes(lobby)
   );
 
   return lobbyUsers.length > 0 && lobbyUsers.every((user) => user.ready);
 };
 
 const checkThatAllUsersHaveAnswered = (lobby: string, questionId: string) => {
-  const usersWhoHaveAnswered = Object.values(users).filter(
-    (user) => user.answers[lobby][questionId]
+  const lobbyUsers = Object.values(users).filter(
+    (user) => user.answers && Object.keys(user.answers).includes(lobby)
   );
 
-  if (usersWhoHaveAnswered.length === Object.keys(users).length) {
+  const usersWhoHaveAnswered = lobbyUsers.filter(
+    (user) => user.answers[lobby] && user.answers[lobby][questionId]
+  );
+
+  if (
+    usersWhoHaveAnswered.length === lobbyUsers.length &&
+    lobbyUsers.length > 0
+  ) {
     broadcastAnswerResults(lobby, questionId);
   }
 
@@ -235,105 +262,202 @@ const checkThatAllUsersHaveAnswered = (lobby: string, questionId: string) => {
 
 wss.on('connection', (ws: WebSocket) => {
   let userId: string;
-  // const userId = uuidv4();
-  // const isAdmin = Object.keys(users).length === 0;
-  // users[userId] = { id: userId, ws, isAdmin, score: 0 };
-
   console.log(`New client connected`);
 
-  // ws.send(JSON.stringify({ type: 'welcome', userId, isAdmin }));
-  // broadcastClients();
-
   ws.on('message', (message: string) => {
-    const data = JSON.parse(message);
-    if (!data) return;
+    try {
+      const data = JSON.parse(message);
+      if (!data) return;
 
-    console.log('data', data);
+      console.log('Received message:', data);
 
-    if (data.type === 'setName') {
-      const user = createUser(data.name, data.lobby);
-      userId = user.id;
-      users[user.id] = user;
+      if (data.type === 'setName') {
+        console.log('Processing setName:', data);
 
-      broadcastClients();
-      broadcastUpdateUser(user);
-    }
-
-    if (data.type === 'questions') {
-      storeQuestionsInMemory(data.lobby, data.questions);
-      data.questions[0].isActive = true;
-      broadcastQuestionsToAllClients(data.questions);
-    }
-
-    if (data.type === 'answer') {
-      // we record a users answer and check if all users have answered.
-      const user = users[data.userId];
-      user.answers[data.lobby][data.questionId] = data.answer;
-
-      checkThatAllUsersHaveAnswered(data.lobby, data.questionId);
-    }
-
-    // New client controls
-    if (data.type === 'setReady') {
-      const user = users[data.userId];
-      if (user) {
-        user.ready = data.ready;
-        broadcastClients();
-
-        // If all clients are ready and requester is admin, progress the game
-        if (data.ready && user.isAdmin && checkAllClientsReady(data.lobby)) {
-          transitionToNextQuestionOrEndGameIfNoQuestionsRemaining(data.lobby);
+        if (!data.lobby || !data.name) {
+          console.error('Missing required fields in setName message:', data);
+          ws.send(
+            JSON.stringify({
+              type: 'error',
+              error: 'missing_fields',
+              message: 'Name and lobby are required.',
+            })
+          );
+          return;
         }
-      }
-    }
 
-    if (data.type === 'nextQuestion' && users[data.userId]?.isAdmin) {
-      transitionToNextQuestionOrEndGameIfNoQuestionsRemaining(data.lobby);
-    }
+        // Get only users in this lobby with reliable filtering
+        const usersInLobby = Object.values(users).filter(
+          (user) =>
+            user.answers &&
+            typeof user.answers === 'object' &&
+            Object.keys(user.answers).includes(data.lobby)
+        );
 
-    if (data.type === 'requestGameState') {
-      const questions = getQuestionsFromMemory(data.lobby);
-      if (questions && ws.readyState === WebSocket.OPEN) {
+        // Check for duplicate username with safe comparison
+        const isUsernameTaken = usersInLobby.some(
+          (user) =>
+            user.name && user.name.toLowerCase() === data.name.toLowerCase()
+        );
+
+        if (isUsernameTaken) {
+          console.log(
+            `Username '${data.name}' is already taken in lobby '${data.lobby}'`
+          );
+          // Send error back to client
+          ws.send(
+            JSON.stringify({
+              type: 'error',
+              error: 'username_taken',
+              message:
+                'This username is already in use. Please choose another one.',
+            })
+          );
+          return;
+        }
+
+        console.log(`Creating new user: ${data.name} in lobby: ${data.lobby}`);
+        // Create new user
+        const user = createUser(data.name, data.lobby);
+        userId = user.id;
+
+        // Store the WebSocket connection with the user
+        users[user.id] = { ...user, ws, score: 0 };
+
+        console.log(
+          `User created successfully: ${user.id}, Admin: ${user.isAdmin}`
+        );
+
+        // Send an immediate confirmation back to this client
         ws.send(
           JSON.stringify({
-            type: 'gameState',
-            questions: structuredClone(questions),
-            currentQuestion: questions.findIndex((q) => q.isActive),
+            type: 'nameConfirmed',
+            userId: user.id,
+            isAdmin: user.isAdmin,
+            name: user.name,
           })
         );
+
+        // Then broadcast to everyone
+        broadcastClients(data.lobby);
+        broadcastUpdateUser(users[user.id]);
       }
-    }
 
-    // In your WebSocket message handler, add this new case:
-    if (data.type === 'forceGameEnd' && data.final === true) {
-      console.log(
-        `User ${data.userId} requested FORCED game end for ALL players`
-      );
+      if (data.type === 'questions') {
+        storeQuestionsInMemory(data.lobby, data.questions);
+        data.questions[0].isActive = true;
+        broadcastQuestionsToAllClients(data.questions);
+      }
 
-      // Broadcast game over to ALL clients immediately
-      wss.clients.forEach((client) => {
-        if (client.readyState === WebSocket.OPEN) {
-          // Send with high priority flag
-          client.send(
+      if (data.type === 'answer') {
+        // we record a users answer and check if all users have answered.
+        const user = users[data.userId];
+        if (user && user.answers) {
+          if (!user.answers[data.lobby]) {
+            user.answers[data.lobby] = {};
+          }
+          user.answers[data.lobby][data.questionId] = data.answer;
+          checkThatAllUsersHaveAnswered(data.lobby, data.questionId);
+        }
+      }
+
+      // New client controls
+      if (data.type === 'setReady') {
+        const user = users[data.userId];
+        if (user) {
+          user.ready = data.ready;
+          broadcastClients(data.lobby);
+
+          // If all clients are ready and requester is admin, progress the game
+          if (data.ready && user.isAdmin && checkAllClientsReady(data.lobby)) {
+            transitionToNextQuestionOrEndGameIfNoQuestionsRemaining(data.lobby);
+          }
+        }
+      }
+
+      if (data.type === 'nextQuestion' && users[data.userId]?.isAdmin) {
+        transitionToNextQuestionOrEndGameIfNoQuestionsRemaining(data.lobby);
+      }
+
+      if (data.type === 'requestGameState') {
+        const questions = getQuestionsFromMemory(data.lobby);
+        if (questions && ws.readyState === WebSocket.OPEN) {
+          ws.send(
             JSON.stringify({
-              type: 'gameOver',
-              forced: true,
-              timestamp: Date.now(),
+              type: 'gameState',
+              questions: structuredClone(questions),
+              currentQuestion: questions.findIndex((q) => q.isActive),
             })
           );
         }
-      });
+      }
+
+      // In your WebSocket message handler, add this new case:
+      if (data.type === 'forceGameEnd' && data.final === true) {
+        console.log(
+          `User ${data.userId} requested FORCED game end for ALL players`
+        );
+
+        // Broadcast game over to ALL clients immediately
+        wss.clients.forEach((client) => {
+          if (client.readyState === WebSocket.OPEN) {
+            // Send with high priority flag
+            client.send(
+              JSON.stringify({
+                type: 'gameOver',
+                forced: true,
+                timestamp: Date.now(),
+              })
+            );
+          }
+        });
+      }
+
+      if (data.type === 'gameOver' || data.type === 'forceGameEnd') {
+        // Mark this lobby as having a completed game
+        if (data.lobby) {
+          gameEndedLobbies.add(data.lobby);
+        }
+      }
+    } catch (error) {
+      console.error('Error processing message:', error);
+      ws.send(
+        JSON.stringify({
+          type: 'error',
+          error: 'invalid_message',
+          message: 'Failed to process message.',
+        })
+      );
     }
   });
 
-  ws.on('close', (x) => {
-    console.log(`Client disconnected: ${userId}`);
-    delete users[userId];
+  ws.on('close', () => {
+    if (!userId) return;
 
+    console.log(`Client disconnected: ${userId}`);
+
+    // Get user's lobby before removing the user
+    const userLobby =
+      userId && users[userId] && users[userId].answers
+        ? Object.keys(users[userId].answers || {})[0]
+        : null;
+
+    const wasAdmin = users[userId]?.isAdmin || false;
+
+    delete users[userId];
     gameStarted = false;
 
-    ensureAdminExists();
-    broadcastClients();
+    // Only ensure admin exists if the game hasn't ended in this lobby
+    if (userLobby && !gameEndedLobbies.has(userLobby)) {
+      ensureAdminExists(userLobby);
+      if (wasAdmin) {
+        console.log(`Admin left lobby ${userLobby}, reassigning admin`);
+      }
+    }
+
+    if (userLobby) {
+      broadcastClients(userLobby);
+    }
   });
 });
 
@@ -361,15 +485,24 @@ app.post('/api/endGame', (req, res) => {
 });
 
 function broadcastUpdateUser(user: User): void {
-  wss.clients.forEach((client) => {
-    if (client.readyState === WebSocket.OPEN) {
-      client.send(
+  // Find the user's lobby
+  const userLobby = user.answers ? Object.keys(user.answers)[0] : null;
+  if (!userLobby) return;
+
+  // Only notify users in the same lobby
+  const usersInSameLobby = Object.values(users).filter(
+    (u) => u.answers && Object.keys(u.answers).includes(userLobby)
+  );
+
+  usersInSameLobby.forEach((targetUser) => {
+    if (targetUser.ws && targetUser.ws.readyState === WebSocket.OPEN) {
+      targetUser.ws.send(
         JSON.stringify({
           type: 'updateUser',
           id: user.id,
           isAdmin: user.isAdmin,
           score: user.score,
-          ...(user.name && { name: user.name }),
+          name: user.name,
           answers: user.answers,
         })
       );
@@ -377,29 +510,59 @@ function broadcastUpdateUser(user: User): void {
   });
 }
 
-function broadcastClients(): void {
-  const clientList = Object.values(users).map((user) => ({
+// Modify broadcastClients to only broadcast to users in the specific lobby
+function broadcastClients(lobby: string): void {
+  // Filter users by lobby with reliable check
+  const usersInLobby = Object.values(users).filter(
+    (user) => user.answers && Object.keys(user.answers).includes(lobby)
+  );
+
+  const clientList = usersInLobby.map((user) => ({
     id: user.id,
     isAdmin: user.isAdmin,
     score: user.score,
-    ...(user.name && { name: user.name }),
+    name: user.name,
     answers: user.answers,
     ready: user.ready || false,
   }));
 
-  console.log('clientList', clientList);
-  wss.clients.forEach((client) => {
-    if (client.readyState === WebSocket.OPEN) {
-      client.send(JSON.stringify({ type: 'clients', clients: clientList }));
+  console.log(`Broadcasting to lobby ${lobby}:`, clientList);
+
+  // Only send to users in this lobby
+  usersInLobby.forEach((user) => {
+    if (user.ws && user.ws.readyState === WebSocket.OPEN) {
+      user.ws.send(
+        JSON.stringify({
+          type: 'clients',
+          clients: clientList,
+          lobby,
+        })
+      );
     }
   });
 }
 
-function ensureAdminExists(): void {
-  const adminExists = Object.values(users).some((user) => user.isAdmin);
-  if (!adminExists && Object.keys(users).length > 0) {
-    const newAdminId = Object.keys(users)[0];
-    users[newAdminId].isAdmin = true;
+// Update ensureAdminExists to work with a specific lobby
+function ensureAdminExists(lobby: string): void {
+  const usersInLobby = Object.values(users).filter(
+    (user) => user.answers && Object.keys(user.answers).includes(lobby)
+  );
+
+  const adminExists = usersInLobby.some((user) => user.isAdmin);
+
+  // Check if we should assign a new admin
+  if (!adminExists && usersInLobby.length > 0) {
+    // Assign the first user in the lobby as admin
+    const firstUserInLobby = usersInLobby[0];
+    firstUserInLobby.isAdmin = true;
+
+    console.log(
+      `Assigned new admin in lobby ${lobby}: ${firstUserInLobby.name}`
+    );
+
+    // Notify all clients about the new admin
+    broadcastUpdateUser(firstUserInLobby);
+    broadcastClients(lobby);
   }
 }
 

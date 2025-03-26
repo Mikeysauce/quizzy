@@ -56,6 +56,16 @@ export const quizMachine = createMachine({
             },
           }),
         },
+        // Add transition back to identify state on username error
+        USERNAME_ERROR: {
+          target: 'identify',
+          actions: assign({
+            user: ({ context }) => ({
+              ...context.user,
+              name: '', // Clear the name
+            }),
+          }),
+        },
       },
     },
     game: {

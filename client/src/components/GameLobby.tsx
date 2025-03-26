@@ -8,7 +8,7 @@ import {
 } from '@radix-ui/themes';
 import { InfoCircledIcon } from '@radix-ui/react-icons';
 import QuestionForm from './QuestionForm';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import axios from 'axios';
 
 interface GameLobbyProps {
@@ -41,10 +41,22 @@ function GameLobby({ clients, user, sendQuestionsToServer }: GameLobbyProps) {
   const [isSetup, setIsSetup] = useState(false);
   const lobby = new URLSearchParams(window.location.search).get('lobby');
 
-  const isAdmin = user.isAdmin;
-  const isPending = true;
+  // Debug logging for admin status
+  useEffect(() => {
+    console.log('GameLobby - Current user:', user);
+    console.log('GameLobby - Is admin:', user.isAdmin);
+    console.log('GameLobby - All clients:', clients);
+  }, [user, clients]);
 
-  const adminName = clients.find((client) => client.isAdmin)?.name;
+  // Use the user.isAdmin property directly
+  const isAdmin = user.isAdmin;
+
+  // Only show pending state for non-admin users
+  const isPending = !isAdmin;
+
+  // Find the admin in the clients list
+  const adminClient = clients.find((client) => client.isAdmin);
+  const adminName = adminClient?.name;
 
   const handleSubmit = async (e: React.SyntheticEvent<HTMLFormElement>) => {
     e.preventDefault();
@@ -163,6 +175,7 @@ function GameLobby({ clients, user, sendQuestionsToServer }: GameLobbyProps) {
     localStorage.setItem('questions', JSON.stringify(questions));
   };
 
+  // Within the admin rendering block, add more controls and options
   if (isAdmin) {
     return (
       <div
@@ -187,95 +200,108 @@ function GameLobby({ clients, user, sendQuestionsToServer }: GameLobbyProps) {
               </h2>
             </div>
           </Box>
-          <div className="questions">
-            {questions.length > 0 && (
-              <>
-                <Callout.Root color="gray" variant="outline">
-                  <Callout.Icon>
-                    <InfoCircledIcon />
-                  </Callout.Icon>
-                  <Callout.Text>
-                    You currently have{' '}
-                    <span style={{ fontWeight: 'bold' }}>
-                      {questions.length}
-                    </span>{' '}
-                    question(s). When you have finished adding questions, press
-                    the 'continue' button below to proceed.
-                  </Callout.Text>
-                  <Callout.Text>
-                    Click on a question to edit it. You will need admin
-                    privileges to install and access this application.
-                  </Callout.Text>
-                </Callout.Root>
-              </>
-            )}
-            <Button onClick={() => setIsSetup(!isSetup)}>
-              {isSetup ? 'Hide' : 'Show'} new question form
-            </Button>
+
+          <Callout.Root color="blue">
+            <Callout.Icon>
+              <InfoCircledIcon />
+            </Callout.Icon>
+            <Callout.Text>
+              <Button
+                onClick={() => {
+                  setIsSetup(!isSetup);
+                }}
+                style={{ marginBottom: 10 }}
+              >
+                {isSetup ? 'Hide Setup Form' : 'Show Setup Form'}
+              </Button>
+              <div>
+                Add at least <span>one question</span> to start the game
+              </div>
+            </Callout.Text>
+          </Callout.Root>
+
+          {questions.length > 0 && (
             <div className="questions-list-container">
-              {questions.map((question, index) => (
-                <div key={question.createdAt}>
-                  <button
-                    className="question-title-ghost-button"
-                    onClick={() => toggleEdit(question.createdAt)}
-                  >
-                    {question.question} - {question.correct.answer}
-                  </button>
-                  {question.isEditing && (
+              {questions.map((question) => {
+                if (question.isEditing) {
+                  return (
                     <QuestionForm
+                      key={question.createdAt}
                       handleSubmit={(e) => handleEdit(e, question.createdAt)}
-                      question={question}
                       handleDelete={handleDelete}
+                      question={question}
+                      setImage={(image) => {
+                        setImages((images) => [
+                          ...images,
+                          { questionId: question.id, image },
+                        ]);
+                      }}
                     />
-                  )}
-                </div>
-              ))}
+                  );
+                }
+
+                return (
+                  <Box key={question.createdAt}>
+                    <div>
+                      <button
+                        onClick={() => {
+                          toggleEdit(question.createdAt);
+                        }}
+                        className="question-title-ghost-button"
+                      >
+                        {question.question}
+                      </button>
+                    </div>
+                  </Box>
+                );
+              })}
             </div>
+          )}
 
-            {questions.length > 0 && (
-              <div className="game-controls">
-                <div
-                  style={{
-                    display: 'flex',
-                    flexDirection: 'column',
-                    gap: 15,
-                    alignItems: 'flex-start',
-                  }}
-                >
-                  <Button onClick={saveQuestions}>
-                    Save questions for later
-                  </Button>
-                  {clients.length > 1 && (
-                    <Button
-                      color="green"
-                      onClick={() => sendQuestionsToServer(questions)}
-                    >
-                      Continue to game
-                    </Button>
-                  )}
-                </div>
-
+          {/* Add a button that's always visible for admin regardless of player count */}
+          {questions.length > 0 && (
+            <div className="game-controls">
+              <div
+                style={{
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: 15,
+                  alignItems: 'flex-start',
+                }}
+              >
+                <Button onClick={saveQuestions}>
+                  Save questions for later
+                </Button>
                 <Button
-                  onClick={() => {
-                    localStorage.removeItem('questions');
-                  }}
-                  color="tomato"
+                  color="green"
+                  onClick={() => sendQuestionsToServer(questions)}
                 >
-                  Clear localStorage questions
+                  {clients.length > 1
+                    ? 'Continue to game with players'
+                    : 'Start game solo'}
                 </Button>
               </div>
-            )}
-          </div>
+
+              <Button
+                onClick={() => {
+                  localStorage.removeItem('questions');
+                }}
+                color="tomato"
+              >
+                Clear localStorage questions
+              </Button>
+            </div>
+          )}
         </div>
 
         {isSetup && (
-          <>
-            <QuestionForm
-              handleSubmit={(e) => handleSubmit(e)}
-              // setImage={setImage}
-              handleDelete={() => {}}
-            />
-          </>
+          <QuestionForm
+            handleSubmit={handleSubmit}
+            handleDelete={handleDelete}
+            setImage={(image) => {
+              setImages((images) => [...images, { questionId: '', image }]);
+            }}
+          />
         )}
       </div>
     );

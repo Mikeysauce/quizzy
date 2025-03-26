@@ -17,9 +17,12 @@ function App() {
   const {
     gameState,
     sendMachineCommand,
+    submitName, // Use the new submitName function
     sendAnswerToServer,
     sendQuestionsToServer,
     clientControls,
+    error,
+    isConnecting, // Get the loading state
   } = useQuizMachine();
   const [showConfetti, setShowConfetti] = useState(false);
   const { width, height } = useWindowSize();
@@ -38,9 +41,12 @@ function App() {
     }
   }, [gameState, clientControls]);
 
-  if (name) {
-    sendMachineCommand({ type: 'SUBMIT_NAME', name });
-  }
+  // Instead, use useEffect to handle URL param
+  useEffect(() => {
+    if (name && gameState.matches('identify')) {
+      submitName(name);
+    }
+  }, [name, gameState.matches, submitName]);
 
   const questions = useMemo(() => gameState.context.questions, [gameState]);
 
@@ -116,9 +122,9 @@ function App() {
             transition={{ duration: 0.3 }}
           >
             <Identify
-              onSubmit={(name) =>
-                sendMachineCommand({ type: 'SUBMIT_NAME', name })
-              }
+              onSubmit={(name) => submitName(name)} // Use submitName instead of sendMachineCommand
+              error={error}
+              isLoading={isConnecting} // Pass loading state to show a spinner
             />
           </motion.div>
         )}
