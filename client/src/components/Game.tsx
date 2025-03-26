@@ -6,6 +6,7 @@ import * as Label from '@radix-ui/react-label';
 import { motion, AnimatePresence } from 'framer-motion';
 import toast from 'react-hot-toast';
 import { CountdownCircleTimer } from 'react-countdown-circle-timer';
+import axios from 'axios';
 
 interface Question {
   imagePath?: string;
@@ -68,33 +69,45 @@ function GameComponent({
     questions.find((question) => question.isActive) || null;
   const currentQuestion = currentQuestionRef.current;
 
-  // Check if we've completed all questions and notify server
-  useEffect(() => {
-    // Logic to detect when the game should end
-    if (
-      isResults &&
-      questions.length > 0 &&
-      !questions.some((q) => q.isActive) &&
-      forceNextQuestion
-    ) {
-      console.log('All questions appear to be completed - notifying game over');
+  // Add function to check if this is the last question - MOVED UP
+  const isLastQuestion = useCallback(() => {
+    const activeIndex = questions.findIndex((q) => q.isActive);
+    return activeIndex === questions.length - 1;
+  }, [questions]);
 
-      // Wait briefly for the last results to be visible, then signal game completion
-      const gameOverTimer = setTimeout(() => {
-        // Signal to the parent that we need to end the game
-        // This will cause App to tell the server the game is over
+  // Add a direct function to trigger game end - COMPLETELY REVISED
+  const triggerGameEnd = useCallback(() => {
+    console.log('EMERGENCY: Force ending game NOW');
+
+    // 1. FIRST immediately transition state - this is the most critical part
+    if (forceNextQuestion) {
+      // Call twice to ensure it goes through
+      forceNextQuestion();
+      // Short timeout to ensure the first call has time to process
+      setTimeout(() => {
+        console.log('Second forced transition for reliability');
         forceNextQuestion();
-
-        // And dispatch a synthetic event with special flag for game over
-        const gameOverEvent = new CustomEvent('quizzy:requestGameEnd', {
-          detail: { allQuestionsAnswered: true },
-        });
-        window.dispatchEvent(gameOverEvent);
-      }, 5000);
-
-      return () => clearTimeout(gameOverTimer);
+      }, 100);
     }
-  }, [questions, isResults, forceNextQuestion]);
+
+    // 2. THEN make the HTTP request to notify other players
+    const lobby = new URLSearchParams(window.location.search).get('lobby');
+    const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:3000';
+
+    // Show toast
+    toast.success('Game completed! Viewing final results...', {
+      icon: '🏆',
+      duration: 5000,
+    });
+
+    // The HTTP request is secondary - the local transition is what matters
+    axios
+      .post(`${apiUrl}/api/endGame`, { lobby })
+      .then(() => console.log('Server notified of game end'))
+      .catch((error) =>
+        console.error('Failed to notify server, but game ended locally', error)
+      );
+  }, [forceNextQuestion]);
 
   // Add a utility function to advance to next question
   const advanceToNextQuestion = useCallback(() => {
@@ -118,42 +131,72 @@ function GameComponent({
       console.log('Advancing to next question:', activeIndex + 1);
       forceNextQuestion();
     } else {
-      // We're at the last question, trigger game over
-      console.log('Reached end of questions, triggering game over');
-      const gameOverEvent = new CustomEvent('quizzy:requestGameEnd', {
-        detail: { allQuestionsAnswered: true },
-      });
-      window.dispatchEvent(gameOverEvent);
+      // We're at the last question, trigger game end
+      console.log('Reached end of questions, ending game directly');
+      forceNextQuestion(); // This will handle game end logic in App.tsx
     }
   }, [questions, forceNextQuestion]);
 
-  // Add a more aggressive auto-advance timer
+  // Add a more reliable check for last question with fallback
+  const isLastQuestionWithFallback = useCallback(() => {
+    // First check using the standard method
+    const activeIndex = questions.findIndex((q) => q.isActive);
+
+    // If we found an active question and it's the last one
+    if (activeIndex !== -1 && activeIndex === questions.length - 1) {
+      return true;
+    }
+
+    // Fallback: If no active question is found but we've answered all questions except one
+    const answeredQuestions = questions.filter(
+      (q) => q.users && q.users.length > 0
+    );
+    return answeredQuestions.length === questions.length - 1;
+  }, [questions]);
+
+  // Check if we've completed all questions and notify server
   useEffect(() => {
-    // If we're showing results, set a timer to advance automatically
-    if (isResults && forceNextQuestion) {
+    // Logic to detect when the game should end
+    if (
+      isResults &&
+      questions.length > 0 &&
+      !questions.some((q) => q.isActive) &&
+      forceNextQuestion
+    ) {
+      console.log('All questions appear to be completed - notifying game over');
+
+      // Wait briefly for the last results to be visible, then signal game completion
+      const gameOverTimer = setTimeout(() => {
+        // Signal to the parent that we need to end the game
+        // This will cause App to tell the server the game is over
+        forceNextQuestion();
+        // No more custom event dispatching
+      }, 5000);
+
+      return () => clearTimeout(gameOverTimer);
+    }
+  }, [questions, isResults, forceNextQuestion]);
+
+  // Auto-transition to next question - COMPLETELY SIMPLIFIED
+  useEffect(() => {
+    if (isResults) {
+      // Set a shorter timer (3 seconds instead of 5)
       const timer = setTimeout(() => {
-        console.log('Auto-advancing after timeout');
-        advanceToNextQuestion();
-      }, 5000); // 5 seconds
+        console.log('Auto-timer fired');
+
+        // Direct check for last question - much simpler
+        if (isLastQuestion()) {
+          console.log('LAST QUESTION DETECTED - Auto-ending game');
+          triggerGameEnd();
+        } else {
+          console.log('Not last question - advancing normally');
+          if (forceNextQuestion) forceNextQuestion();
+        }
+      }, 3000); // REDUCED from 5000 to 3000ms for faster response
 
       return () => clearTimeout(timer);
     }
-  }, [isResults, advanceToNextQuestion, forceNextQuestion]);
-
-  // Auto-transition to next question after showing results
-  useEffect(() => {
-    if (isResults && resultsShownTimestamp) {
-      // Set a timeout to auto-continue after 5 seconds
-      const autoProgressTimer = setTimeout(() => {
-        console.log('Auto-progressing after showing results for 5 seconds');
-        if (forceNextQuestion) {
-          forceNextQuestion();
-        }
-      }, 5000);
-
-      return () => clearTimeout(autoProgressTimer);
-    }
-  }, [isResults, resultsShownTimestamp, forceNextQuestion]);
+  }, [isResults, isLastQuestion, triggerGameEnd, forceNextQuestion]);
 
   // Critical effect to handle changes in isResults - memoized with useCallback
   const handleResultsChange = useCallback(() => {
@@ -283,27 +326,6 @@ function GameComponent({
       tickSound.play();
     }
   }, [timeLeft, hasSubmitted]);
-
-  // Add function to check if this is the last question
-  const isLastQuestion = useCallback(() => {
-    const activeIndex = questions.findIndex((q) => q.isActive);
-    return activeIndex === questions.length - 1;
-  }, [questions]);
-
-  // Add a direct function to trigger game end
-  const triggerGameEnd = useCallback(() => {
-    console.log('Game completed - directly triggering game end');
-    // Create and dispatch the event for any components listening for it
-    const gameOverEvent = new CustomEvent('quizzy:gameOver', {
-      detail: { allQuestionsAnswered: true },
-    });
-    window.dispatchEvent(gameOverEvent);
-
-    // If forceNextQuestion exists, call it to ensure state transitions
-    if (forceNextQuestion) {
-      forceNextQuestion();
-    }
-  }, [forceNextQuestion]);
 
   if (!currentQuestion) {
     return (

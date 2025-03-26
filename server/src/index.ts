@@ -7,10 +7,12 @@ import fs from 'node:fs';
 import path from 'node:path';
 import basicAuth from 'express-basic-auth';
 import cors from 'cors';
+import bodyParser from 'body-parser';
 
 const app: Application = express();
 
 app.use(cors());
+app.use(bodyParser.json());
 
 interface CustomRequest extends Request {
   file: Express.Multer.File; // Use the correct type for multer
@@ -301,6 +303,27 @@ wss.on('connection', (ws: WebSocket) => {
         );
       }
     }
+
+    // In your WebSocket message handler, add this new case:
+    if (data.type === 'forceGameEnd' && data.final === true) {
+      console.log(
+        `User ${data.userId} requested FORCED game end for ALL players`
+      );
+
+      // Broadcast game over to ALL clients immediately
+      wss.clients.forEach((client) => {
+        if (client.readyState === WebSocket.OPEN) {
+          // Send with high priority flag
+          client.send(
+            JSON.stringify({
+              type: 'gameOver',
+              forced: true,
+              timestamp: Date.now(),
+            })
+          );
+        }
+      });
+    }
   });
 
   ws.on('close', (x) => {
@@ -312,6 +335,29 @@ wss.on('connection', (ws: WebSocket) => {
     ensureAdminExists();
     broadcastClients();
   });
+});
+
+// Add this new HTTP endpoint for force ending games
+app.post('/api/endGame', (req, res) => {
+  const { lobby } = req.body;
+  console.log(`Force ending game for lobby ${lobby} via HTTP endpoint`);
+
+  // Broadcast gameOver to ALL clients in this lobby
+  wss.clients.forEach((client) => {
+    if (client.readyState === WebSocket.OPEN) {
+      client.send(
+        JSON.stringify({
+          type: 'gameOver',
+          forced: true,
+          timestamp: Date.now(),
+        })
+      );
+    }
+  });
+
+  res
+    .status(200)
+    .json({ success: true, message: 'Game ended for all clients' });
 });
 
 function broadcastUpdateUser(user: User): void {

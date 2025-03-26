@@ -209,6 +209,39 @@ export const useQuizMachine = () => {
     };
   }, [gameState.context.user.id, lobby]);
 
+  // Add a new direct game end event listener
+  useEffect(() => {
+    const handleForceGameEnd = (event: any) => {
+      console.log(
+        'DIRECT force game end requested with details:',
+        event.detail
+      );
+
+      // First update local state
+      sendMachineCommand({ type: 'GAME_OVER' });
+
+      // Then ensure server knows about it - with a special flag to indicate it's final
+      if (wsRef.current?.readyState === WebSocket.OPEN) {
+        wsRef.current.send(
+          JSON.stringify({
+            type: 'forceGameEnd', // New more explicit message type
+            userId: gameState.context.user.id,
+            lobby,
+            timestamp: Date.now(),
+            // Add the special flag to indicate this is the final game end request
+            final: true,
+          })
+        );
+      }
+    };
+
+    window.addEventListener('quizzy:forceGameEnd', handleForceGameEnd);
+
+    return () => {
+      window.removeEventListener('quizzy:forceGameEnd', handleForceGameEnd);
+    };
+  }, [gameState.context.user.id, lobby, sendMachineCommand]);
+
   // Existing gameOver handler
   useEffect(() => {
     const handleGameOver = () => {
@@ -245,8 +278,28 @@ export const useQuizMachine = () => {
 
         // Handle different message types
         if (data.type === 'gameOver') {
-          console.log('[WebSocket] Game over received - ending game');
+          console.log(
+            '[WebSocket] Game over received - FORCE ending game for all players'
+          );
+
+          // More aggressive approach - transition immediately
           sendMachineCommand({ type: 'GAME_OVER' });
+
+          // Show a clear UI indication
+          toast.success('Game has ended! Viewing final results...', {
+            icon: '🏆',
+            duration: 5000,
+          });
+
+          // Add a delay then force a reload if still not in game over state
+          setTimeout(() => {
+            if (!gameState.matches('gameOver')) {
+              console.log(
+                'Still not in gameOver state after delay - forcing hard reload'
+              );
+              window.location.reload();
+            }
+          }, 3000);
         }
 
         if (data.type === 'answerResults') {
