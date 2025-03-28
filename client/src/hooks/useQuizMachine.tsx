@@ -467,15 +467,15 @@ export const useQuizMachine = () => {
             duration: 5000,
           });
 
-          // Add a delay then force a reload if still not in game over state
-          setTimeout(() => {
-            if (!gameState.matches('gameOver')) {
-              console.log(
-                'Still not in gameOver state after delay - forcing hard reload'
-              );
-              window.location.reload();
-            }
-          }, 3000);
+          // // Add a delay then force a reload if still not in game over state
+          // setTimeout(() => {
+          //   if (!gameState.matches('gameOver')) {
+          //     console.log(
+          //       'Still not in gameOver state after delay - forcing hard reload'
+          //     );
+          //     window.location.reload();
+          //   }
+          // }, 3000);
         }
 
         if (data.type === 'answerResults') {
@@ -569,6 +569,46 @@ export const useQuizMachine = () => {
             currentQuestion: data.currentQuestion,
           });
         }
+
+        // Handle restart status updates
+        if (data.type === 'restartStatus') {
+          // Show a toast with the restart status
+          toast.info(
+            `${data.requestCount} of ${
+              data.userCount
+            } players ready to restart (${Math.round(data.percentage)}%)`,
+            { duration: 3000, id: 'restart-status' }
+          );
+        }
+
+        // Handle game restart
+        if (data.type === 'gameRestart') {
+          console.log('[WebSocket] Received game restart command');
+
+          // Make sure we use the correct state transition type
+          sendMachineCommand({
+            type: 'GAME_RESTART',
+          });
+
+          // Wait a moment to ensure the state transition completes
+          setTimeout(() => {
+            // Verify transition was successful
+            if (gameState.matches('lobby')) {
+              toast.success('Game restarted! You are back in the lobby', {
+                duration: 3000,
+              });
+            } else {
+              console.warn(
+                'Failed to transition to lobby, current state:',
+                gameState.value
+              );
+              // Force the transition if needed
+              sendMachineCommand({
+                type: 'GAME_RESTART',
+              });
+            }
+          }, 100);
+        }
       };
     },
     [sendMachineCommand, gameState.context.user.id, gameState.context.user.name]
@@ -608,6 +648,7 @@ export const useQuizMachine = () => {
     sendAnswerToServer,
     error,
     isConnecting, // Expose loading state
+    wsRef, // Export the WebSocket reference
     // Expose client control functions
     clientControls: {
       setReady,

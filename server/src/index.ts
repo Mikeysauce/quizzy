@@ -260,6 +260,50 @@ const checkThatAllUsersHaveAnswered = (lobby: string, questionId: string) => {
   // check each users answers and ensure they all have
 };
 
+// Add a new Set to track users who have requested restart for each lobby
+const restartRequestsMap = new Map<string, Set<string>>();
+
+// Add a function to check if all users in a lobby have requested restart
+const checkAllUsersRequestedRestart = (lobby: string) => {
+  const lobbyUsers = Object.values(users).filter(
+    (user) => user.answers && Object.keys(user.answers).includes(lobby)
+  );
+
+  const restartRequests = restartRequestsMap.get(lobby) || new Set<string>();
+
+  return (
+    lobbyUsers.length > 0 &&
+    lobbyUsers.every((user) => restartRequests.has(user.id))
+  );
+};
+
+// Reset all users in a lobby
+const resetLobbyUsers = (lobby: string) => {
+  // Get all users in the lobby
+  const lobbyUsers = Object.values(users).filter(
+    (user) => user.answers && Object.keys(user.answers).includes(lobby)
+  );
+
+  // Reset each user's state for this lobby
+  lobbyUsers.forEach((user) => {
+    user.score = 0;
+    user.answers[lobby] = {};
+    user.ready = false;
+  });
+
+  // Clear the restart requests for this lobby
+  restartRequestsMap.delete(lobby);
+
+  // Remove the lobby from the gameEndedLobbies set
+  gameEndedLobbies.delete(lobby);
+
+  // Remove the questions for this lobby
+  questionMap.delete(lobby);
+
+  // Broadcast the updated clients
+  broadcastClients(lobby);
+};
+
 wss.on('connection', (ws: WebSocket) => {
   let userId: string;
   console.log(`New client connected`);
@@ -268,6 +312,8 @@ wss.on('connection', (ws: WebSocket) => {
     try {
       const data = JSON.parse(message);
       if (!data) return;
+
+      const { lobby = 'default-lobby', name, type } = data;
 
       console.log('Received message:', data);
 
@@ -417,6 +463,74 @@ wss.on('connection', (ws: WebSocket) => {
         // Mark this lobby as having a completed game
         if (data.lobby) {
           gameEndedLobbies.add(data.lobby);
+        }
+      }
+
+      // Handle restart requests
+      if (data.type === 'requestRestart') {
+        const { userId, lobby } = data;
+
+        // Ensure this lobby exists
+        if (!restartRequestsMap.has(lobby)) {
+          restartRequestsMap.set(lobby, new Set<string>());
+        }
+
+        // Add this user to the restart requests
+        restartRequestsMap.get(lobby)!.add(userId);
+
+        console.log(`User ${userId} requested restart in lobby ${lobby}`);
+
+        // Update all clients with the current restart requests
+        const lobbyUsers = Object.values(users).filter(
+          (user) => user.answers && Object.keys(user.answers).includes(lobby)
+        );
+
+        const restartRequests = restartRequestsMap.get(lobby)!;
+
+        // Calculate % of users who have requested restart
+        const restartPercentage =
+          lobbyUsers.length > 0
+            ? (restartRequests.size / lobbyUsers.length) * 100
+            : 0;
+
+        // Broadcast the restart status to all clients in this lobby
+        lobbyUsers.forEach((user) => {
+          if (user.ws && user.ws.readyState === WebSocket.OPEN) {
+            user.ws.send(
+              JSON.stringify({
+                type: 'restartStatus',
+                requestedBy: Array.from(restartRequests).map((id) => {
+                  const user = users[id];
+                  return user ? { id: user.id, name: user.name } : { id };
+                }),
+                percentage: restartPercentage,
+                userCount: lobbyUsers.length,
+                requestCount: restartRequests.size,
+              })
+            );
+          }
+        });
+
+        // Check if all users have requested restart
+        if (checkAllUsersRequestedRestart(lobby)) {
+          console.log(
+            `All users in lobby ${lobby} have requested restart. Resetting the game.`
+          );
+
+          // Reset the game state for this lobby
+          resetLobbyUsers(lobby);
+
+          // Inform all clients to return to the lobby
+          lobbyUsers.forEach((user) => {
+            if (user.ws && user.ws.readyState === WebSocket.OPEN) {
+              user.ws.send(
+                JSON.stringify({
+                  type: 'gameRestart',
+                  lobby,
+                })
+              );
+            }
+          });
         }
       }
     } catch (error) {

@@ -8,45 +8,34 @@ import { GameResults } from './components/GameResults';
 import Game from './components/Game';
 import { AnimatePresence, motion } from 'framer-motion';
 import { useEffect, useMemo, useState, useCallback } from 'react';
-import Confetti from 'react-confetti';
 import { useWindowSize } from './hooks/useWindowSize';
 import { Toaster } from 'react-hot-toast';
+import toast from 'react-hot-toast'; // Add this import
 import ReadyControls from './components/ReadyControls';
 
 function App() {
   const {
     gameState,
     sendMachineCommand,
-    submitName, // Use the new submitName function
+    submitName,
     sendAnswerToServer,
     sendQuestionsToServer,
     clientControls,
     error,
-    isConnecting, // Get the loading state
+    isConnecting,
+    wsRef, // Make sure to destructure wsRef
   } = useQuizMachine();
-  const [showConfetti, setShowConfetti] = useState(false);
-  const { width, height } = useWindowSize();
   const shouldCenter = gameState.matches('identify');
   const queryparams = new URLSearchParams(window.location.search);
   const name = queryparams.get('name');
-
-  // Add special effect for answerResults state to force transition after timeout
-  useEffect(() => {
-    console.log('Current game state:', gameState.value);
-
-    // Show confetti when game ends
-    if (gameState.matches('gameOver')) {
-      setShowConfetti(true);
-      setTimeout(() => setShowConfetti(false), 5000);
-    }
-  }, [gameState, clientControls]);
+  const lobby = queryparams.get('lobby') ?? 'default-lobby';
 
   // Instead, use useEffect to handle URL param
   useEffect(() => {
     if (name && gameState.matches('identify')) {
       submitName(name);
     }
-  }, [name, gameState.matches, submitName]);
+  }, [name, gameState.matches, submitName, gameState]);
 
   const questions = useMemo(() => gameState.context.questions, [gameState]);
 
@@ -102,15 +91,44 @@ function App() {
     }
   }, [questions, gameState, sendMachineCommand, clientControls]);
 
+  // Add a restart handler function
+  const handleRestart = useCallback(() => {
+    console.log('User requested restart');
+    if (wsRef.current?.readyState === WebSocket.OPEN) {
+      wsRef.current.send(
+        JSON.stringify({
+          type: 'requestRestart',
+          userId: gameState.context.user.id,
+          lobby,
+        })
+      );
+
+      // Note: We don't immediately transition states - we wait for server response
+      toast.success('Waiting for all players to restart...', {
+        duration: 5000,
+        id: 'restart-request',
+      });
+
+      // Add this to debug any unexpected behavior
+      console.log('Current user identity preserved:', {
+        id: gameState.context.user.id,
+        name: gameState.context.user.name,
+        isAdmin: gameState.context.user.isAdmin,
+      });
+    }
+  }, [
+    gameState.context.user.id,
+    gameState.context.user.name,
+    gameState.context.user.isAdmin,
+    lobby,
+    wsRef,
+  ]);
+
   console.log('app re-render');
 
   return (
     <div className={shouldCenter ? 'container' : ''}>
       <Toaster position="top-right" />
-
-      {showConfetti && (
-        <Confetti width={width} height={height} recycle={false} />
-      )}
 
       <AnimatePresence mode="wait">
         {gameState.matches('identify') && !name && (
@@ -191,7 +209,11 @@ function App() {
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.5, delay: 0.2 }}
           >
-            <GameResults {...gameState.context} />
+            <GameResults
+              {...gameState.context}
+              onRestart={handleRestart}
+              userId={gameState.context.user.id}
+            />
           </motion.div>
         )}
       </AnimatePresence>

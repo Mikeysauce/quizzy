@@ -179,14 +179,46 @@ export const quizMachine = createMachine({
     },
     gameOver: {
       on: {
-        RESTART: 'identify',
-        // Add transition to handle potential next question requests from gameOver state
+        // REMOVE the direct RESTART to identify transition and replace with proper handling
+        // RESTART: 'identify', <- This is causing our problem by going back to identity screen
+
+        // Instead, handle RESTART by going to lobby while preserving identity
+        RESTART: {
+          target: 'lobby',
+          actions: [
+            () =>
+              console.log(
+                '[State Machine] Manual restart requested - going to lobby with preserved identity'
+              ),
+            assign({
+              questions: () => [], // Clear questions
+              // Explicitly keep user identity
+            }),
+          ],
+        },
+
+        // Keep our existing NEXT and GAME_RESTART handlers
         NEXT: {
           target: 'game',
           actions: () =>
             console.log(
               '[State Machine] Attempting to continue from gameOver state'
             ),
+        },
+
+        // Enhance our GAME_RESTART handler to be more explicit
+        GAME_RESTART: {
+          target: 'lobby',
+          actions: [
+            () =>
+              console.log(
+                '[State Machine] Server initiated restart - preserving user identity'
+              ),
+            assign({
+              questions: () => [], // Clear questions
+              // User info is implicitly preserved
+            }),
+          ],
         },
       },
     },

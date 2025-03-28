@@ -181,6 +181,7 @@ function GameLobby({ clients, user, sendQuestionsToServer }: GameLobbyProps) {
       <div
         className="wrapper"
         style={{
+          padding: '1rem 0',
           gridTemplateColumns: isSetup
             ? `minmax(200px, 1fr) minmax(200px, 1fr)`
             : '1fr',
